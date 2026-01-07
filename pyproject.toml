@@ -1,0 +1,86 @@
+[project]
+name = "ViCLIP-OT"
+version = "0.1.0"
+description = "ViCLIP-OT"
+readme = "README.md"
+license = "GPL-3.0"
+requires-python = ">=3.12"
+authors = [
+  {name = "Minh-Thien Nguyen", email = "minhnguyent546@gmail.com"},
+  {name = "Quoc-Khang Tran", email = "twkan2001@gmail.com"},
+]
+dependencies = [
+    "hf-transfer>=0.1.9",
+    "huggingface-hub[cli]>=0.32.4",
+    "loguru>=0.7.3",
+    "requests>=2.32.3",
+    "scikit-learn>=1.6.1",
+    "timm>=1.0.15",
+    "tqdm>=4.67.1",
+    "torch>=2.8.0,<2.9.0",
+    "torchvision>=0.23.0,<0.24.0",
+    "wandb>=0.20.1",
+    "pillow>=11.2.1",
+    "pyyaml>=6.0.2",
+    "matplotlib>=3.10.3",
+    "scienceplots>=2.1.1",
+    "numpy>=2.2.6",
+    "captum>=0.7.0",
+    "annoy>=1.17.3",
+    "pydantic>=2.11.7",
+    "fvcore>=0.1.5.post20221221",
+]
+
+[project.urls]
+Homepage = "https://github.com/minhnguyent546/ViCLIP-OT"
+Repository = "https://github.com/minhnguyent546/ViCLIP-OT"
+Changelog = "https://github.com/minhnguyent546/ViCLIP-OT/blob/master/CHANGELOG.md"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.10",
+]
+
+[tool.ruff]
+line-length = 99
+target-version = "py312"
+exclude = [
+    "./thirdparty/",
+    "./notebooks/",
+]
+
+[tool.ruff.lint]
+select = [
+    "B",      # flake8-bugbear
+    "C",      # comple-structure
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "I",      # isort
+    "W",      # pycodestyle warnings
+    "RUF013", # implicit-optional
+    "UP006",  # non-pep585-annotation (e.g. `list[int]` instead of `List[int]`)
+]
+extend-safe-fixes = ["UP006"]
+ignore = [
+    "C901", # complex-structure
+    "E101", # mixed-spaces-and-tabs
+    "E501", # line-too-long
+    "E741", # ambiguous-variable-name
+    "F402", # import-shadowed-by-loop-var
+    "F823", # undefined-local
+]
+
+[tool.ruff.lint.isort]
+known-third-party = ["wandb"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = [
+    "E402", # module-import-not-at-top-of-file
+    "F401", # unused-import
+    "F403", # undefined-local-with-import-star
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
