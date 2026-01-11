@@ -173,6 +173,11 @@ def train_model(args: argparse.Namespace) -> None:
     # setting up logging with wandb
     wandb_run = None
     if args.wandb_logging:
+        if "WANDB_API_KEY" not in os.environ:
+            raise RuntimeError(
+                "WANDB_API_KEY environment variable is not set. "
+                "Please set it to enable wandb logging."
+            )
         wandb_run = wandb.init(
             project=args.wandb_project,
             name=args.wandb_name,
