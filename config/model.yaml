@@ -1,0 +1,12 @@
+image_config:
+  model_name: timm/convnext_base.dinov3_lvd1689m
+  pretrained: true
+  pool: avg
+  proj: mlp
+  proj_bias: false
+  proj_dropout_rate: 0.1
+
+text_config:
+  model_name: google/embeddinggemma-300m
+
+embed_dim: 1024
