@@ -18,7 +18,6 @@ class ViCLIPOTImageConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_name: str
-    embed_dim: int
     pretrained: bool = True
     pool: Literal["avg", "max", "abs_attn", "rot_attn", ""] = "avg"
     proj: Literal["linear", "mlp"] = "mlp"
@@ -142,7 +141,8 @@ class TextEncoder(nn.Module):
                 self.config.model_name, trust_remote_code=True
             )
 
-        intern_embed_dim = self.encoder.get_sentence_embedding_dimension()
+        # TODO: works for Gemma3, make more general
+        intern_embed_dim = self.encoder.config.hidden_size
         assert intern_embed_dim is not None, "Failed to get sentence embedding dimension."
         self.fc = nn.Linear(intern_embed_dim, embed_dim)
 
@@ -203,6 +203,16 @@ class ViCLIPOT(nn.Module):
         self.logit_bias = None
         if config.logit_bias is not None:
             self.logit_bias = nn.Parameter(torch.tensor(config.logit_bias))
+
+    def lock_image_tower(self, unlocked_groups: int = 0, freeze_bn_stats: bool = False):
+        # lock image tower as per LiT - https://arxiv.org/abs/2111.07991
+        raise NotImplementedError("TODO: Locking image tower is not implemented yet.")
+
+    def lock_text_tower(self, unlocked_layers: int = 0, freeze_layer_norm: bool = True):
+        assert freeze_layer_norm, (
+            "Unfreezing LayerNorm is not supported. LayerNorm treated like other weights."
+        )
+        raise NotImplementedError("TODO: Locking text tower is not implemented yet.")
 
     def encode_image(self, image, normalize: bool = False):
         features = self.image_encoder(image)

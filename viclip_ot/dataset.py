@@ -1,4 +1,5 @@
 import json
+import os
 
 import torch
 from PIL import Image
@@ -60,28 +61,34 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str]]):
 
     def __init__(
         self,
-        data_file_path: str,
+        root_dir: str,
+        metadata_json_file: str,
         image_transforms=None,
     ) -> None:
-        self.data_file_path = data_file_path
+        self.root_dir = root_dir
+        self.metadata_file_path = os.path.join(self.root_dir, metadata_json_file)
         self.image_transforms = image_transforms
 
-        logger.info(f"Loading image text data from: {self.data_file_path}")
-        with open(self.data_file_path, "r") as f:
-            raw_data = json.load(f)
-            self.data = ImageTextData.model_validate(raw_data)
+        logger.info(f"Loading image text data from: {self.metadata_file_path}")
+        with open(self.metadata_file_path, "r") as f:
+            self.metadata = ImageTextData.model_validate(json.load(f))
 
         logger.info(
-            f"Found {len(self.data.images)} images and {len(self.data.annotations)} annotations."
+            f"Found {len(self.metadata.images)} images and {len(self.metadata.annotations)} annotations."
         )
-        self.id_to_image_path = {image.id: image.image_path for image in self.data.images}
+        self.id_to_image_path = {image.id: image.image_path for image in self.metadata.images}
 
         # flatten Samples: create a list of (image_path, caption)
         self.samples = []
-        for annotation in self.data.annotations:
+        for annotation in self.metadata.annotations:
             image_id = annotation.image_id
             if image_id in self.id_to_image_path:
-                self.samples.append((self.id_to_image_path[image_id], annotation.caption))
+                self.samples.append(
+                    (
+                        os.path.join(self.root_dir, self.id_to_image_path[image_id]),
+                        annotation.caption,
+                    )
+                )
             else:
                 logger.warning(
                     f"Could not find image with ID {image_id} for annotation {annotation.id}"

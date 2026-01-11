@@ -183,12 +183,12 @@ def eval_model(
     all_text_features = []
     logit_scale = None
     with torch.inference_mode():
-        for images, texts in eval_iter:
-            images = images.to(device=device, non_blocking=True)
-            texts = texts.to(device=device, non_blocking=True)
+        for batch in eval_iter:
+            images = batch["images"].to(device=device, non_blocking=True)
+            text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
 
             with autocast_context:
-                model_outputs = model(images)
+                model_outputs = model(images, text_inputs)
                 image_features = model_outputs["image_features"]
                 text_features = model_outputs["text_features"]
                 logit_scale = model_outputs["logit_scale"]
@@ -216,7 +216,7 @@ def eval_model(
         eval_metrics = get_clip_metrics(
             image_features=torch.cat(all_image_features, dim=0),
             text_features=torch.cat(all_text_features, dim=0),
-            logit_scale=logit_scale,
+            logit_scale=logit_scale.cpu(),
         )
         eval_metrics["loss"] = eval_loss.avg
 
