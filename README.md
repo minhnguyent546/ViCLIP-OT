@@ -66,8 +66,33 @@ WIP
 
 To train the model, you can run the following command:
 ```bash
-python -m viclip_ot.train \
-  --seed WIP
+uv run python -m viclip_ot.train \
+  --seed 42 \
+  --model_config ./config/model.yaml \
+  --dataset_dir ./data/UIT-ViIC \
+  --train_batch_size 64 \
+  --train_crop_size 224 \
+  --eval_batch_size 64 \
+  --eval_resize_size 256 \
+  --eval_crop_size 224 \
+  --checkpoints_dir ./checkpoints \
+  --num_epochs 25 \
+  --num_workers 6 \
+  --log_file_interval 5 \
+  --mixed_precision fp16 \
+  --gradient_accum_steps 2 \
+  --lr 1e-4 \
+  --weight_decay 1e-5 \
+  --scheduler one_cycle_lr \
+  --min_lr 1e-7 \
+  --lr_warmup_epochs 4 \
+  --lr_warmup_method linear \
+  --best_checkpoint_metrics loss \
+  --save_best_k 4 \
+  --max_grad_norm 1.0 \
+  --wandb_logging \
+  --wandb_project viclip_ot_test \
+  --wandb_name test_01
 ```
 
 ## 4. Inference
