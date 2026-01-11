@@ -1,0 +1,233 @@
+# pyright: reportAssignmentType=false
+from typing import Any, Literal, OrderedDict
+
+import numpy as np
+import timm
+import torch
+import torch.nn as nn
+import torch.nn.functional as Fun
+from pydantic import BaseModel, ConfigDict
+from timm.layers.attention_pool2d import AttentionPool2d as AbsAttentionPool2d
+from timm.layers.attention_pool2d import RotAttentionPool2d
+from timm.layers.mlp import Mlp
+from torch import Tensor
+from transformers import AutoModel, AutoTokenizer
+
+
+class ViCLIPOTImageConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_name: str
+    embed_dim: int
+    pretrained: bool = True
+    pool: Literal["avg", "max", "abs_attn", "rot_attn", ""] = "avg"
+    proj: Literal["linear", "mlp"] = "mlp"
+    proj_bias: bool = False
+    proj_dropout_rate: float = 0.0
+
+
+class ViCLIPOTTextConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_name: str
+
+
+class ViCLIPOTConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_config: ViCLIPOTImageConfig
+    text_config: ViCLIPOTTextConfig
+    embed_dim: int
+    logit_scale: float = np.log(1 / 0.07)
+    logit_bias: float | None = None
+
+
+class ImageEncoder(nn.Module):
+    _SUPPORTED_MODELS = ["timm/convnext_base.dinov3_lvd1689m"]
+
+    def __init__(
+        self,
+        config: ViCLIPOTImageConfig,
+        *,
+        embed_dim: int,
+    ) -> None:
+        super().__init__()
+        self.config = config
+        if self.config.model_name not in self._SUPPORTED_MODELS:
+            raise ValueError(
+                f"Unsupported model: {self.config.model_name}. Call `list_models()` to see supported models."
+            )
+
+        is_custom_pool = self.config.pool in ("abs_attn", "rot_attn")
+        self.trunk = timm.create_model(
+            model_name=self.config.model_name,
+            pretrained=self.config.pretrained,
+        )
+        trunk_default_config: dict[str, Any] = self.trunk.default_cfg
+        assert "pool_size" in trunk_default_config
+        feat_size = trunk_default_config["pool_size"]
+        if is_custom_pool:
+            # if attn pooling used, remove both classifier and default pool
+            self.trunk.reset_classifier(num_classes=0, global_pool="")  # pyright: ignore[reportCallIssue]
+        else:
+            # reset global pool if pool config set, otherwise leave as network default
+            reset_kwargs = {"global_pool": self.config.pool} if self.config.pool else {}
+            self.trunk.reset_classifier(0, **reset_kwargs)  # pyright: ignore[reportCallIssue]
+
+        prev_chs: int = self.trunk.num_features
+
+        head_layers = OrderedDict()
+
+        # Add custom pooling to head
+        if self.config.pool == "abs_attn":
+            head_layers["pool"] = AbsAttentionPool2d(
+                in_features=prev_chs, feat_size=feat_size, out_features=embed_dim
+            )
+            prev_chs = embed_dim
+        elif self.config.pool == "rot_attn":
+            head_layers["pool"] = RotAttentionPool2d(in_features=prev_chs, out_features=embed_dim)
+            prev_chs = embed_dim
+
+        # NOTE attention pool ends with a projection layer, so proj should usually be set to '' if such pooling is used
+        if self.config.proj == "linear":
+            head_layers["drop"] = nn.Dropout(self.config.proj_dropout_rate)
+            head_layers["proj"] = nn.Linear(
+                in_features=prev_chs, out_features=embed_dim, bias=self.config.proj_bias
+            )
+        elif self.config.proj == "mlp":
+            head_layers["mlp"] = Mlp(
+                in_features=prev_chs,
+                hidden_features=2 * embed_dim,
+                out_features=embed_dim,
+                drop=(self.config.proj_dropout_rate, 0),
+                bias=(True, self.config.proj_bias),
+            )
+        else:
+            raise ValueError(f"Unsupported proj type: {self.config.proj}")
+
+        self.head = nn.Sequential(head_layers)
+
+    @classmethod
+    def list_models(cls) -> list[str]:
+        return cls._SUPPORTED_MODELS
+
+    def forward(self, x: Tensor) -> Tensor:
+        y = self.trunk(x)
+        y = self.head(y)
+
+        return y
+
+
+class TextEncoder(nn.Module):
+    _SUPPORTED_MODELS = ["google/embeddinggemma-300m"]
+
+    def __init__(
+        self,
+        config: ViCLIPOTTextConfig,
+        *,
+        embed_dim: int,
+        tokenizer=None,
+    ) -> None:
+        super().__init__()
+        self.config = config
+        if self.config.model_name not in self._SUPPORTED_MODELS:
+            raise ValueError(
+                f"Unsupported model: {self.config.model_name}. Call `list_models()` to see supported models."
+            )
+
+        self.encoder = AutoModel.from_pretrained(self.config.model_name, trust_remote_code=True)
+        self.tokenizer = tokenizer
+        if self.tokenizer is None:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.config.model_name, trust_remote_code=True
+            )
+
+        intern_embed_dim = self.encoder.get_sentence_embedding_dimension()
+        assert intern_embed_dim is not None, "Failed to get sentence embedding dimension."
+        self.fc = nn.Linear(intern_embed_dim, embed_dim)
+
+    @classmethod
+    def list_models(cls) -> list[str]:
+        return cls._SUPPORTED_MODELS
+
+    def get_embeddings(self, inputs: dict[str, Tensor], *, normalize: bool = False) -> Tensor:
+        # forward Pass
+        outputs = self.encoder(**inputs)
+
+        # get Last Hidden State (batch_size, seq_len, hidden_dim)
+        last_hidden_state = outputs.last_hidden_state
+
+        # Mean Pooling (Crucial Step)
+        # We must mask out padding tokens so they don't affect the average
+        attention_mask = inputs["attention_mask"]
+
+        # Expand mask to match hidden state dimensions: (batch, seq_len) -> (batch, seq_len, hidden_dim)
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+
+        # Sum embeddings ignoring padding
+        sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
+
+        # Sum mask (clamp to avoid division by zero)
+        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+
+        # Calculate mean
+        embeddings = sum_embeddings / sum_mask
+
+        # Normalize (L2 Norm)
+        # Embedding models usually require normalized vectors for cosine similarity
+        if normalize:
+            embeddings = Fun.normalize(embeddings, p=2, dim=1)
+
+        return embeddings
+
+    def forward(self, inputs) -> Tensor:
+        y = self.get_embeddings(inputs, normalize=False)
+        y = self.fc(y)
+
+        return y
+
+
+# TODO: add logit_scale
+class ViCLIPOT(nn.Module):
+    """ViCLIP-OT model."""
+
+    def __init__(self, config: ViCLIPOTConfig) -> None:
+        super().__init__()
+
+        self.image_encoder = ImageEncoder(
+            config=config.image_config,
+            embed_dim=config.embed_dim,
+        )
+        self.text_encoder = TextEncoder(config=config.text_config, embed_dim=config.embed_dim)
+        self.logit_scale = nn.Parameter(torch.tensor(config.logit_scale))
+        self.logit_bias = None
+        if config.logit_bias is not None:
+            self.logit_bias = nn.Parameter(torch.tensor(config.logit_bias))
+
+    def encode_image(self, image, normalize: bool = False):
+        features = self.image_encoder(image)
+        if normalize:
+            features = Fun.normalize(features, p=2, dim=-1)
+
+        return features
+
+    def encode_text(self, inputs, normalize: bool = False):
+        features = self.text_encoder(inputs)
+        if normalize:
+            features = Fun.normalize(features, p=2, dim=-1)
+
+        return features
+
+    def forward(self, images: Tensor, text_inputs):
+        image_features = self.encode_image(images, normalize=True)
+        text_features = self.encode_text(text_inputs, normalize=True)
+
+        output_dict = {
+            "image_features": image_features,
+            "text_features": text_features,
+            "logit_scale": self.logit_scale.exp(),
+        }
+        if self.logit_bias is not None:
+            output_dict["logit_bias"] = self.logit_bias
+
+        return output_dict

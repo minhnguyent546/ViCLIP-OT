@@ -14,11 +14,13 @@ from wandb.sdk.wandb_run import Run as WandbRun
 def save_metadata_to_checkpoint(
     checkpoint_dir: str,
     args: argparse.Namespace,
+    model_config: dict[str, Any],
     wandb_run: WandbRun | None = None,
 ) -> None:
     os.makedirs(checkpoint_dir, exist_ok=True)
     metadata = {
         "args": vars(args),
+        "model_config": model_config,
     }
 
     if wandb_run is not None:
@@ -166,3 +168,11 @@ def count_model_params(model: nn.Module, trainable: bool = False) -> int:
 def count_model_flops(model: nn.Module, input_size: tuple[int, ...]) -> int:
     flops = fvcore.nn.FlopCountAnalysis(model, torch.randn(*input_size))
     return flops.total()
+
+
+def load_yaml_file(file_path: str) -> dict[str, Any]:
+    """Load a YAML file and return its contents as a dictionary."""
+    with open(file_path, "r") as f:
+        data = yaml.safe_load(f)
+
+    return data
