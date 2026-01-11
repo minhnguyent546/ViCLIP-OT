@@ -1,5 +1,4 @@
 import argparse
-import copy
 import os
 import time
 from datetime import datetime
@@ -51,6 +50,7 @@ def train_model(args: argparse.Namespace) -> None:
     utils.set_seed(args.seed)
     logger.info(f"Seed: {args.seed}")
     logger.info(f"Args: {args}")
+    logger.info(f"Effective batch size: {args.train_batch_size * args.gradient_accum_steps}")
 
     # training device
     device = utils.get_device(args.device)
@@ -59,10 +59,10 @@ def train_model(args: argparse.Namespace) -> None:
     # creating model
 
     model_config = ViCLIPOTConfig.model_validate(utils.load_yaml_file(args.model_config))
+    logger.info(f"Model config: {model_config}")
     model = ViCLIPOT(config=model_config)
     tokenizer = model.text_encoder.tokenizer
     logger.info(f"Model: {model}")
-    logger.info(f"Tokenizer: {tokenizer}")
     model.to(device)
 
     if args.linear_probing:
@@ -102,22 +102,25 @@ def train_model(args: argparse.Namespace) -> None:
         ]
     )
     train_dataset = ImageTextDataset(
-        data_file_path=os.path.join(args.dataset_dir, "train.json"),
+        root_dir=args.dataset_dir,
+        metadata_json_file="train.json",
         image_transforms=train_transforms,
     )
     test_dataset = ImageTextDataset(
-        data_file_path=os.path.join(args.dataset_dir, "test.json"),
+        root_dir=args.dataset_dir,
+        metadata_json_file="test.json",
         image_transforms=eval_transforms,
     )
     val_dataset = ImageTextDataset(
-        data_file_path=os.path.join(args.dataset_dir, "val.json"),
+        root_dir=args.dataset_dir,
+        metadata_json_file="val.json",
         image_transforms=eval_transforms,
     )
 
     logger.info(
         f"train_size = {len(train_dataset)}, "
         f"test_size = {len(test_dataset)}, "
-        f"val_size = {len(val_dataset)}"
+        f"val_size = {len(val_dataset)} "
     )
 
     collate_fun = ImageTextCollate(tokenizer=tokenizer)
@@ -137,6 +140,7 @@ def train_model(args: argparse.Namespace) -> None:
         shuffle=False,
         num_workers=args.num_workers,
         pin_memory=True,
+        collate_fn=collate_fun,
         persistent_workers=True,
     )
     val_data_loader = DataLoader(
@@ -145,6 +149,7 @@ def train_model(args: argparse.Namespace) -> None:
         shuffle=False,
         num_workers=args.num_workers,
         pin_memory=True,
+        collate_fn=collate_fun,
         persistent_workers=True,
     )
 
@@ -201,15 +206,7 @@ def train_model(args: argparse.Namespace) -> None:
         )
 
     num_model_params = utils.count_model_params(model, trainable=False)
-    model_for_profiling = copy.deepcopy(model).cpu().eval()
-    num_model_flops = utils.count_model_flops(
-        model_for_profiling, input_size=(1, 3, args.eval_crop_size, args.eval_crop_size)
-    )
-    del model_for_profiling
-    logger.info(f"Using model: {args.model}")
-    logger.info(
-        f"num_params: {utils.to_human_readable(num_model_params)} | num_flops: {utils.to_human_readable(num_model_flops)}"
-    )
+    logger.info(f"num_params: {utils.to_human_readable(num_model_params)}")
 
     if args.run_test_only:
         raise NotImplementedError("Test only mode is not implemented yet.")
@@ -335,7 +332,7 @@ def train_model(args: argparse.Namespace) -> None:
                         image_features=model_outputs["image_features"],
                         text_features=model_outputs["text_features"],
                         logit_scale=model_outputs["logit_scale"],
-                        logit_bias=model_outputs["logit_bias"],
+                        logit_bias=model_outputs.get("logit_bias", None),
                         reduction="sum",
                     )
                     if num_items_in_batch > 0:
