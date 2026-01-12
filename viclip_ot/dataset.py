@@ -101,7 +101,12 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str]]):
     def __getitem__(self, idx) -> tuple[Image.Image | Tensor, str]:
         image_path, caption = self.samples[idx]
 
-        image = Image.open(image_path).convert("RGB")
+        try:
+            image = Image.open(image_path).convert("RGB")
+        except (OSError, SyntaxError) as e:
+            logger.warning(f"Corrupt image at {image_path}, skipping. Error: {e}")
+            # recursively get the next image
+            return self.__getitem__((idx + 1) % len(self))
 
         if self.image_transforms is not None:
             image = self.image_transforms(image)
