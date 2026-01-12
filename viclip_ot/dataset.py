@@ -26,7 +26,7 @@ class ImageTextData(BaseModel):
     annotations: list[ImageTextDataAnnotation]
 
 
-class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str]]):
+class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str, int]]):
     """
     Dataset structure:
 
@@ -66,7 +66,8 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str]]):
         image_transforms=None,
     ) -> None:
         self.root_dir = root_dir
-        self.metadata_file_path = os.path.join(self.root_dir, metadata_json_file)
+        self.metadata_file_path = os.path.join(
+            self.root_dir, metadata_json_file)
         self.image_transforms = image_transforms
 
         logger.info(f"Loading image text data from: {self.metadata_file_path}")
@@ -76,17 +77,20 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str]]):
         logger.info(
             f"Found {len(self.metadata.images)} images and {len(self.metadata.annotations)} annotations."
         )
-        self.id_to_image_path = {image.id: image.image_path for image in self.metadata.images}
+        self.id_to_image_path = {
+            image.id: image.image_path for image in self.metadata.images}
 
-        # flatten Samples: create a list of (image_path, caption)
+        # flatten Samples: create a list of (image_path, caption, image_id) tuples
         self.samples = []
         for annotation in self.metadata.annotations:
             image_id = annotation.image_id
             if image_id in self.id_to_image_path:
                 self.samples.append(
                     (
-                        os.path.join(self.root_dir, self.id_to_image_path[image_id]),
+                        os.path.join(
+                            self.root_dir, self.id_to_image_path[image_id]),
                         annotation.caption,
+                        image_id,
                     )
                 )
             else:
@@ -98,8 +102,8 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str]]):
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx) -> tuple[Image.Image | Tensor, str]:
-        image_path, caption = self.samples[idx]
+    def __getitem__(self, idx) -> tuple[Image.Image | Tensor, str, int]:
+        image_path, caption, image_id = self.samples[idx]
 
         try:
             image = Image.open(image_path)
@@ -110,7 +114,8 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str]]):
             image = image.convert("RGB")
 
         except (OSError, SyntaxError) as e:
-            logger.warning(f"Corrupt image at {image_path}, skipping. Error: {e}")
+            logger.warning(
+                f"Corrupt image at {image_path}, skipping. Error: {e}")
             # recursively get the next image
             return self.__getitem__((idx + 1) % len(self))
 
@@ -121,7 +126,7 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str]]):
         # TODO: this prompt is for encode document, consider supporting encode for query.
         formatted_caption = f"title: none | text: {caption}"
 
-        return image, formatted_caption
+        return image, formatted_caption, int(image_id)
 
 
 class ImageTextCollate:
@@ -130,12 +135,14 @@ class ImageTextCollate:
         self.max_length = max_length
 
     def __call__(self, batch):
-        images, texts = zip(*batch, strict=True)
+        images, texts, image_ids = zip(*batch, strict=True)
 
         if torch.is_tensor(images[0]):
             images = torch.stack(images)
         else:
             images = torch.stack(images)
+
+        image_ids = torch.tensor(image_ids, dtype=torch.long)
 
         text_inputs = self.tokenizer(
             list(texts),
@@ -148,4 +155,5 @@ class ImageTextCollate:
         return {
             "images": images,
             "text_inputs": text_inputs,
+            "image_ids": image_ids,
         }
