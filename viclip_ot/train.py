@@ -77,6 +77,11 @@ def train_model(args: argparse.Namespace) -> None:
         checkpoint = torch.load(args.from_checkpoint, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
 
+    if args.lock_image:
+        model.lock_image_tower(
+            last_unfreeze_groups=args.lock_image_last_unfreeze_groups,
+            freeze_bn_stats=args.lock_image_freeze_bn_stats,
+        )
     # loading dataset
     train_transforms = v2.Compose(
         [
@@ -210,7 +215,10 @@ def train_model(args: argparse.Namespace) -> None:
         )
 
     num_model_params = utils.count_model_params(model, trainable=False)
-    logger.info(f"num_params: {utils.to_human_readable(num_model_params)}")
+    num_model_trainable_params = utils.count_model_params(model, trainable=True)
+    logger.info(
+        f"num_params: {utils.to_human_readable(num_model_params)} | num_trainable_params: {utils.to_human_readable(num_model_trainable_params)}"
+    )
 
     if args.run_test_only:
         raise NotImplementedError("Test only mode is not implemented yet.")
