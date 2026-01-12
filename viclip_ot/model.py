@@ -13,10 +13,12 @@ from safetensors.torch import load_file as load_safetensors
 from timm.layers.attention_pool2d import AttentionPool2d as AbsAttentionPool2d
 from timm.layers.attention_pool2d import RotAttentionPool2d
 from timm.layers.mlp import Mlp
+from timm.models.helpers import group_modules, group_parameters
 from torch import Tensor
 from transformers import AutoModel, AutoTokenizer
 
 from viclip_ot.utils.logger import logger
+from viclip_ot.utils.training import freeze_batch_norm_2d
 
 
 class ViCLIPOTImageConfig(BaseModel):
@@ -115,6 +117,32 @@ class ImageEncoder(nn.Module):
             raise ValueError(f"Unsupported proj type: {self.config.proj}")
 
         self.head = nn.Sequential(head_layers)
+
+    def freeze(self, last_unfreeze_groups: int = 0, freeze_bn_stats: bool = False):
+        """Freeze trunk, leave the last `last_unfreeze_groups` unfreeze.
+
+        Adapted from: https://github.com/mlfoundations/open_clip/blob/d3cdb734a2710feeb4c6307df037afa5f786a3e1/src/open_clip/timm_model.py#L105.
+        """
+        if not last_unfreeze_groups:
+            # lock full model
+            for param in self.trunk.parameters():
+                param.requires_grad = False
+            if freeze_bn_stats:
+                freeze_batch_norm_2d(self.trunk)
+        else:
+            # NOTE: partial freeze requires latest timm (master) branch and is subject to change
+            matcher = self.trunk.group_matcher()  # pyright: ignore[reportCallIssue]
+            gparams = group_parameters(self.trunk, matcher)
+            max_layer_id = max(gparams.keys())
+            max_layer_id = max_layer_id - last_unfreeze_groups
+            for group_idx in range(max_layer_id + 1):
+                group = gparams[group_idx]
+                for param in group:
+                    self.trunk.get_parameter(param).requires_grad = False
+            if freeze_bn_stats:
+                gmodules = group_modules(self.trunk, matcher, reverse=True)
+                gmodules = {k for k, v in gmodules.items() if v <= max_layer_id}
+                freeze_batch_norm_2d(self.trunk, gmodules)
 
     @classmethod
     def list_models(cls) -> list[str]:
@@ -297,9 +325,11 @@ class ViCLIPOT(nn.Module):
         if config.logit_bias is not None:
             self.logit_bias = nn.Parameter(torch.tensor(config.logit_bias, dtype=torch.float32))
 
-    def lock_image_tower(self, unlocked_groups: int = 0, freeze_bn_stats: bool = False):
+    def lock_image_tower(self, last_unfreeze_groups: int = 0, freeze_bn_stats: bool = False):
         # lock image tower as per LiT - https://arxiv.org/abs/2111.07991
-        raise NotImplementedError("TODO: Locking image tower is not implemented yet.")
+        self.image_encoder.freeze(
+            last_unfreeze_groups=last_unfreeze_groups, freeze_bn_stats=freeze_bn_stats
+        )
 
     def lock_text_tower(self, unlocked_layers: int = 0, freeze_layer_norm: bool = True):
         assert freeze_layer_norm, (

@@ -207,6 +207,24 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default=3,
     )
 
+    # LiT
+    group.add_argument(
+        "--lock_image",
+        action="store_true",
+        help="Whether to lock the image_encoder",
+    )
+    group.add_argument(
+        "--lock_image_last_unfreeze_groups",
+        type=int,
+        help="Leave last n layer groups in image_encoder unlocked",
+        default=0,
+    )
+    group.add_argument(
+        "--lock_image_freeze_bn_stats",
+        action="store_true",
+        help="Whether to freeze BatchNorm running stats for any locked layers",
+    )
+
     # early stopping
     group.add_argument(
         "--early_stopping",
