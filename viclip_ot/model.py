@@ -162,13 +162,17 @@ class TextEncoder(nn.Module):
         attention_mask = inputs["attention_mask"]
 
         # Expand mask to match hidden state dimensions: (batch, seq_len) -> (batch, seq_len, hidden_dim)
-        input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+        input_mask_expanded = (
+            attention_mask.unsqueeze(-1)
+            .expand(last_hidden_state.size())
+            .to(last_hidden_state.dtype)
+        )
 
         # Sum embeddings ignoring padding
         sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
 
         # Sum mask (clamp to avoid division by zero)
-        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-6)
 
         # Calculate mean
         embeddings = sum_embeddings / sum_mask
@@ -199,10 +203,10 @@ class ViCLIPOT(nn.Module):
             embed_dim=config.embed_dim,
         )
         self.text_encoder = TextEncoder(config=config.text_config, embed_dim=config.embed_dim)
-        self.logit_scale = nn.Parameter(torch.tensor(config.logit_scale))
+        self.logit_scale = nn.Parameter(torch.tensor(config.logit_scale, dtype=torch.float32))
         self.logit_bias = None
         if config.logit_bias is not None:
-            self.logit_bias = nn.Parameter(torch.tensor(config.logit_bias))
+            self.logit_bias = nn.Parameter(torch.tensor(config.logit_bias, dtype=torch.float32))
 
     def lock_image_tower(self, unlocked_groups: int = 0, freeze_bn_stats: bool = False):
         # lock image tower as per LiT - https://arxiv.org/abs/2111.07991
