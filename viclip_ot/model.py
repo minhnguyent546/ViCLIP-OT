@@ -90,9 +90,14 @@ class ImageEncoder(nn.Module):
         # NOTE attention pool ends with a projection layer, so proj should usually be set to '' if such pooling is used
         if self.config.proj == "linear":
             head_layers["drop"] = nn.Dropout(self.config.proj_dropout_rate)
-            head_layers["proj"] = nn.Linear(
+            proj_layer = nn.Linear(
                 in_features=prev_chs, out_features=embed_dim, bias=self.config.proj_bias
             )
+            # Initialize with Xavier/Glorot for better gradient flow in contrastive learning
+            nn.init.xavier_uniform_(proj_layer.weight)
+            if proj_layer.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
+                nn.init.zeros_(proj_layer.bias)
+            head_layers["proj"] = proj_layer
         elif self.config.proj == "mlp":
             head_layers["mlp"] = Mlp(
                 in_features=prev_chs,
@@ -146,6 +151,12 @@ class TextEncoder(nn.Module):
         assert intern_embed_dim is not None, "Failed to get sentence embedding dimension."
         self.fc = nn.Linear(intern_embed_dim, embed_dim)
 
+        # Initialize the projection layer with Xavier/Glorot initialization
+        # to help with gradient flow in contrastive learning
+        nn.init.xavier_uniform_(self.fc.weight)
+        if self.fc.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
+            nn.init.zeros_(self.fc.bias)
+
     @classmethod
     def list_models(cls) -> list[str]:
         return cls._SUPPORTED_MODELS
@@ -157,7 +168,6 @@ class TextEncoder(nn.Module):
         # get Last Hidden State (batch_size, seq_len, hidden_dim)
         last_hidden_state = outputs.last_hidden_state
 
-        # Mean Pooling (Crucial Step)
         # We must mask out padding tokens so they don't affect the average
         attention_mask = inputs["attention_mask"]
 
@@ -172,10 +182,10 @@ class TextEncoder(nn.Module):
         sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
 
         # Sum mask (clamp to avoid division by zero)
-        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-6)
+        sum_mask = torch.clamp(input_mask_expanded.sum(1).float(), min=1e-9)
 
-        # Calculate mean
-        embeddings = sum_embeddings / sum_mask
+        # Calculate mean in float32, then cast back to original dtype
+        embeddings = (sum_embeddings.float() / sum_mask).to(last_hidden_state.dtype)
 
         # Normalize (L2 Norm)
         # Embedding models usually require normalized vectors for cosine similarity
