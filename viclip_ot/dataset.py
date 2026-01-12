@@ -102,7 +102,13 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str]]):
         image_path, caption = self.samples[idx]
 
         try:
-            image = Image.open(image_path).convert("RGB")
+            image = Image.open(image_path)
+            # handle palette images with transparency
+            if image.mode == "P" and "transparency" in image.info:
+                image = image.convert("RGBA")
+
+            image = image.convert("RGB")
+
         except (OSError, SyntaxError) as e:
             logger.warning(f"Corrupt image at {image_path}, skipping. Error: {e}")
             # recursively get the next image
