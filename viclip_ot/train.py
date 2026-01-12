@@ -361,9 +361,10 @@ def train_model(args: argparse.Namespace) -> None:
             num_batches = len(batches)  # actual number batches retrieved
 
             batch_loss: float = 0.0
-            for batch in batches:
-                images = batch["images"].to(device=device, non_blocking=True)
-                text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
+
+            if num_batches == 1:
+                images = batches[0]["images"].to(device=device, non_blocking=True)
+                text_inputs = batches[0]["text_inputs"].to(device=device, non_blocking=True)
 
                 with autocast_context:
                     model_outputs = model(images, text_inputs)
@@ -379,6 +380,55 @@ def train_model(args: argparse.Namespace) -> None:
 
                 scaler.scale(loss).backward()
                 batch_loss += loss.detach().item()
+            else:
+                # step 1: cache the features without any gradient tracking (gradient caching).
+                cached_features = {}
+                with torch.no_grad():
+                    for batch in batches:
+                        images = batch["images"].to(device=device, non_blocking=True)
+                        text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
+
+                        with autocast_context:
+                            model_outputs = model(images, text_inputs)
+                            for key in ("logit_scale", "logit_bias"):
+                                model_outputs.pop(key, None)
+                            for key, value in model_outputs.items():
+                                if key not in cached_features:
+                                    cached_features[key] = []
+                                cached_features[key].append(value)
+
+                # step 2: re-do the forward pass for those batches, and use the cache features
+                for batch_idx, batch in enumerate(batches):
+                    images = batch["images"].to(device=device, non_blocking=True)
+                    text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
+
+                    with autocast_context:
+                        model_outputs = model(images, text_inputs)
+
+                        outputs_no_cached = {}
+                        outputs_no_cached["logit_scale"] = model_outputs.pop("logit_scale")
+                        if "logit_bias" in model_outputs:
+                            outputs_no_cached["logit_bias"] = model_outputs.pop("logit_bias")
+
+                        outputs_for_loss = {}
+                        for key, value in cached_features.items():
+                            outputs_for_loss[key] = torch.cat(
+                                value[:batch_idx] + model_outputs[key] + value[batch_idx + 1 :],
+                            )
+
+                        loss = criterion(
+                            **outputs_for_loss,
+                            **outputs_no_cached,
+                            reduction="sum",
+                        )
+                        del outputs_for_loss
+                        del outputs_no_cached
+
+                        if num_items_in_batch > 0:
+                            loss = loss / num_items_in_batch
+
+                    scaler.scale(loss).backward()
+                    batch_loss += loss.detach().item() / num_batches
 
             grad_norm_value = 0.0
             if args.max_grad_norm > 0:
