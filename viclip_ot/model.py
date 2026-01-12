@@ -1,4 +1,5 @@
 # pyright: reportAssignmentType=false
+import json
 from typing import Any, Literal, OrderedDict
 
 import numpy as np
@@ -6,12 +7,16 @@ import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as Fun
+from huggingface_hub import hf_hub_download
 from pydantic import BaseModel, ConfigDict
+from safetensors.torch import load_file as load_safetensors
 from timm.layers.attention_pool2d import AttentionPool2d as AbsAttentionPool2d
 from timm.layers.attention_pool2d import RotAttentionPool2d
 from timm.layers.mlp import Mlp
 from torch import Tensor
 from transformers import AutoModel, AutoTokenizer
+
+from viclip_ot.utils.logger import logger
 
 
 class ViCLIPOTImageConfig(BaseModel):
@@ -130,7 +135,6 @@ class TextEncoder(nn.Module):
         config: ViCLIPOTTextConfig,
         *,
         embed_dim: int,
-        tokenizer=None,
     ) -> None:
         super().__init__()
         self.config = config
@@ -139,12 +143,15 @@ class TextEncoder(nn.Module):
                 f"Unsupported model: {self.config.model_name}. Call `list_models()` to see supported models."
             )
 
-        self.encoder = AutoModel.from_pretrained(self.config.model_name, trust_remote_code=True)
-        self.tokenizer = tokenizer
-        if self.tokenizer is None:
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.config.model_name, trust_remote_code=True
+        if self.config.model_name == "google/embeddinggemma-300m":
+            self._prepare_embeddinggemma_300m()
+        else:
+            raise NotImplementedError(
+                f"TextEncoder for model {self.config.model_name} is not implemented yet."
             )
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.config.model_name, trust_remote_code=True
+        )
 
         # TODO: works for Gemma3, make more general
         intern_embed_dim = self.encoder.config.hidden_size
@@ -160,6 +167,76 @@ class TextEncoder(nn.Module):
     @classmethod
     def list_models(cls) -> list[str]:
         return cls._SUPPORTED_MODELS
+
+    def _prepare_embeddinggemma_300m(self) -> None:
+        """Download pre-trained weights and sentence-transformers stuff
+        to be able to use the model with Hugging Face."""
+        if not self.config.model_name == "google/embeddinggemma-300m":
+            raise ValueError(
+                "_prepare_embeddinggemma_300m is only applicable for 'google/embeddinggemma-300m' model."
+            )
+
+        # discover module paths
+        modules_path = hf_hub_download(self.config.model_name, filename="modules.json")
+        with open(modules_path, "r", encoding="utf-8") as f:
+            modules = json.load(f)
+
+        xf_sub = next(m["path"] for m in modules if "Transformer" in m["type"])
+        pool_sub = next(m["path"] for m in modules if "Pooling" in m["type"])
+        dense_subs = [m["path"] for m in modules if "Dense" in m["type"]]
+        norm_exists = any("Normalize" in m["type"] for m in modules)
+
+        logger.info(f"[TextEncoder - embeddinggemma-300m] Transformer subfolder: {xf_sub}")
+        logger.info(f"[TextEncoder - embeddinggemma-300m] Pooling subfolder: {pool_sub}")
+        logger.info(f"[TextEncoder - embeddinggemma-300m] Dense subfolders: {dense_subs}")
+        logger.info(f"[TextEncoder - embeddinggemma-300m] Has Normalize: {norm_exists}")
+
+        # load backbone and tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.config.model_name, trust_remote_code=True
+        )
+        self.encoder = AutoModel.from_pretrained(self.config.model_name, trust_remote_code=True)
+
+        self.dense = nn.Sequential(*[self._load_dense(ds) for ds in sorted(dense_subs)])
+
+    def _load_dense(self, subfolder: str) -> nn.Module:
+        cfg_p = hf_hub_download(self.config.model_name, filename=f"{subfolder}/config.json")
+        with open(cfg_p, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+
+        lin = torch.nn.Linear(cfg["in_features"], cfg["out_features"], bias=cfg.get("bias", True))
+
+        # load weights (safetensors preferred; fall back to bin)
+        try:
+            st = load_safetensors(
+                hf_hub_download(self.config.model_name, filename=f"{subfolder}/model.safetensors")
+            )
+        except Exception:
+            st = torch.load(
+                hf_hub_download(self.config.model_name, filename=f"{subfolder}/pytorch_model.bin"),
+                map_location="cpu",
+            )
+
+        # Normalize key names if needed
+        if "linear.weight" in st:
+            st["weight"] = st.pop("linear.weight")
+        if "linear.bias" in st:
+            st["bias"] = st.pop("linear.bias")
+
+        # Ensure weights are compute dtype
+        lin.load_state_dict(st, strict=True)
+
+        act = cfg.get("activation_function", None)
+        if "Tanh" in act:
+            activation_fun = nn.Tanh()
+        elif "ReLU" in act:
+            activation_fun = nn.ReLU()
+        elif "Identity" in act:
+            activation_fun = nn.Identity()
+        else:
+            raise ValueError(f"Unsupported activation function: {act}")
+
+        return nn.Sequential(lin, activation_fun)
 
     def get_embeddings(self, inputs: dict[str, Tensor], *, normalize: bool = False) -> Tensor:
         # forward Pass
@@ -187,15 +264,17 @@ class TextEncoder(nn.Module):
         # Calculate mean in float32, then cast back to original dtype
         embeddings = (sum_embeddings.float() / sum_mask).to(last_hidden_state.dtype)
 
-        # Normalize (L2 Norm)
-        # Embedding models usually require normalized vectors for cosine similarity
+        # pass through dense layers
+        embeddings = self.dense(embeddings)
+
+        # normalize (L2 Norm)
         if normalize:
             embeddings = Fun.normalize(embeddings, p=2, dim=1)
 
         return embeddings
 
-    def forward(self, inputs) -> Tensor:
-        y = self.get_embeddings(inputs, normalize=False)
+    def forward(self, inputs, normalize: bool = False) -> Tensor:
+        y = self.get_embeddings(inputs, normalize=normalize)
         y = self.fc(y)
 
         return y
