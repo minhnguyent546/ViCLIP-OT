@@ -173,14 +173,17 @@ class ClipLoss(nn.Module):
         logit_scale: Tensor,
         logit_bias: Tensor | None = None,
     ):
-        logits_per_image = logit_scale * image_features @ text_features.T
-        logits_per_text = logit_scale * text_features @ image_features.T
+        # Compute matrix multiplication in float32 for numerical stability
+        # with mixed precision training, then cast back to original dtype
+        original_dtype = image_features.dtype
+        logits_per_image = logit_scale * (image_features.float() @ text_features.float().T)
+        logits_per_text = logits_per_image.T
 
         if logit_bias is not None:
-            logits_per_image += logit_bias
-            logits_per_text += logit_bias
+            logits_per_image = logits_per_image + logit_bias
+            logits_per_text = logits_per_text + logit_bias
 
-        return logits_per_image, logits_per_text
+        return logits_per_image.to(original_dtype), logits_per_text.to(original_dtype)
 
     def forward(
         self,
