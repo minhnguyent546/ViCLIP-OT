@@ -315,9 +315,7 @@ class ViCLIPOT(nn.Module):
         return features
 
     def encode_text(self, inputs, normalize: bool = False):
-        features = self.text_encoder(inputs)
-        if normalize:
-            features = Fun.normalize(features, p=2, dim=-1)
+        features = self.text_encoder(inputs=inputs, normalize=normalize)
 
         return features
 
