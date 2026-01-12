@@ -5,6 +5,7 @@ from datetime import datetime
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torchvision.transforms.v2 as v2
 import wandb
 from torch.optim import AdamW
@@ -22,6 +23,7 @@ from viclip_ot.utils.metric import AverageMeter
 from viclip_ot.utils.training import (
     EarlyStopping,
     eval_model,
+    get_parameter_names,
     maybe_log_eval_results,
     print_eval_results,
     save_top_k_checkpoints,
@@ -79,7 +81,9 @@ def train_model(args: argparse.Namespace) -> None:
     train_transforms = v2.Compose(
         [
             v2.RandomResizedCrop(
-                size=args.train_crop_size, interpolation=v2.InterpolationMode.BICUBIC
+                size=args.train_crop_size,
+                scale=(0.5, 1.0),
+                interpolation=v2.InterpolationMode.BICUBIC,
             ),
             v2.RandomHorizontalFlip(p=0.5),
             v2.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
@@ -214,10 +218,45 @@ def train_model(args: argparse.Namespace) -> None:
 
     assert checkpoint_dir is not None
 
+    # separate parameters for weight decay
+    decay_parameters = get_parameter_names(
+        model,
+        forbidden_layer_types=[
+            nn.LayerNorm,
+            nn.BatchNorm1d,
+            nn.BatchNorm2d,
+            nn.BatchNorm3d,
+            nn.GroupNorm,
+            nn.InstanceNorm1d,
+            nn.InstanceNorm2d,
+            nn.InstanceNorm3d,
+            nn.Embedding,
+        ],
+        forbidden_layer_names=[
+            "bias",
+            "norm",
+        ],
+    )
+    logger.debug(
+        f"No decay params: {[name for name, _param in model.named_parameters() if name not in decay_parameters]}"
+    )
+    param_groups = [
+        {
+            "params": [
+                param for name, param in model.named_parameters() if name in decay_parameters
+            ],
+            "weight_decay": args.weight_decay,
+        },
+        {
+            "params": [
+                param for name, param in model.named_parameters() if name not in decay_parameters
+            ],
+            "weight_decay": 0.0,
+        },
+    ]
     optimizer = AdamW(
-        model.parameters(),
+        param_groups,
         lr=args.lr,
-        weight_decay=args.weight_decay,
     )
 
     num_updates_per_epoch = (
