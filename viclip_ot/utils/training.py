@@ -1,5 +1,6 @@
 import heapq
 import os
+import re
 from contextlib import nullcontext
 from typing import Any, TypedDict
 
@@ -32,6 +33,44 @@ class EvalResults(TypedDict):
     t2i_R__1: float
     t2i_R__5: float
     t2i_R__10: float
+
+
+def get_parameter_names(model, forbidden_layer_types=None, forbidden_layer_names=None):
+    """
+    Returns the names of the model parameters that are not inside a forbidden layer.
+
+    Taken and modified from: https://github.com/huggingface/transformers/blob/main/src/transformers/trainer_pt_utils.py#L952
+
+    Modifications:
+    - Make `forbidden_layer_types` default to None
+    """
+    forbidden_layer_patterns = (
+        [re.compile(pattern) for pattern in forbidden_layer_names]
+        if forbidden_layer_names is not None
+        else []
+    )
+    if forbidden_layer_types is None:
+        forbidden_layer_types = []
+
+    result = []
+    for name, child in model.named_children():
+        child_params = get_parameter_names(child, forbidden_layer_types, forbidden_layer_names)
+        result += [
+            f"{name}.{n}"
+            for n in child_params
+            if not isinstance(child, tuple(forbidden_layer_types))
+            and not any(
+                pattern.search(f"{name}.{n}".lower()) for pattern in forbidden_layer_patterns
+            )
+        ]
+    # Add model specific parameters that are not in any child
+    result += [
+        k
+        for k in model._parameters
+        if not any(pattern.search(k.lower()) for pattern in forbidden_layer_patterns)
+    ]
+
+    return result
 
 
 def convert_eval_results_to_dict(eval_results: EvalResults, fmt: str = "0.4f") -> dict[str, Any]:
