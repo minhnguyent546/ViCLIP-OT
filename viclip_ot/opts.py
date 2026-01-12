@@ -211,7 +211,12 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--lock_image",
         action="store_true",
-        help="Whether to lock the image_encoder",
+        help="Whether to lock the (trunk in) image_encoder",
+    )
+    group.add_argument(
+        "--lock_text",
+        action="store_true",
+        help="Whether to lock the (encoder in) text_encoder",
     )
     group.add_argument(
         "--lock_image_last_unfreeze_groups",

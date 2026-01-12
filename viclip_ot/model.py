@@ -266,6 +266,14 @@ class TextEncoder(nn.Module):
 
         return nn.Sequential(lin, activation_fun)
 
+    def freeze(self) -> None:
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+
+        if hasattr(self, "dense"):
+            for param in self.dense.parameters():
+                param.requires_grad = False
+
     def get_embeddings(self, inputs: dict[str, Tensor], *, normalize: bool = False) -> Tensor:
         # forward Pass
         outputs = self.encoder(**inputs)
@@ -331,11 +339,8 @@ class ViCLIPOT(nn.Module):
             last_unfreeze_groups=last_unfreeze_groups, freeze_bn_stats=freeze_bn_stats
         )
 
-    def lock_text_tower(self, unlocked_layers: int = 0, freeze_layer_norm: bool = True):
-        assert freeze_layer_norm, (
-            "Unfreezing LayerNorm is not supported. LayerNorm treated like other weights."
-        )
-        raise NotImplementedError("TODO: Locking text tower is not implemented yet.")
+    def lock_text_tower(self):
+        self.text_encoder.freeze()
 
     def encode_image(self, image, normalize: bool = False):
         features = self.image_encoder(image)
