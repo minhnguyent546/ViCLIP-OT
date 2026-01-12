@@ -413,7 +413,7 @@ def train_model(args: argparse.Namespace) -> None:
                         outputs_for_loss = {}
                         for key, value in cached_features.items():
                             outputs_for_loss[key] = torch.cat(
-                                value[:batch_idx] + model_outputs[key] + value[batch_idx + 1 :],
+                                value[:batch_idx] + [model_outputs[key]] + value[batch_idx + 1 :],
                             )
 
                         loss = criterion(
