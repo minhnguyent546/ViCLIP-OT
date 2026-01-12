@@ -142,29 +142,8 @@ class ClipLoss(nn.Module):
     - Removed multi-node support for simplicity.
     """
 
-    def __init__(
-        self,
-        cache_labels: bool = False,
-    ):
+    def __init__(self):
         super().__init__()
-        self.cache_labels = cache_labels
-
-        # cache state
-        self.prev_num_logits = 0
-        self.labels = {}
-
-    def get_ground_truth(self, device: torch.device, num_logits: int) -> torch.Tensor:
-        # calculated ground-truth and cache if enabled
-        # TODO: ayo?
-        if self.prev_num_logits != num_logits or device not in self.labels:
-            labels = torch.arange(num_logits, device=device, dtype=torch.long)
-            if self.cache_labels:
-                self.labels[device] = labels
-                self.prev_num_logits = num_logits
-        else:
-            labels = self.labels[device]
-
-        return labels
 
     def get_logits(
         self,
@@ -202,7 +181,7 @@ class ClipLoss(nn.Module):
             logit_bias=logit_bias,
         )
 
-        labels = self.get_ground_truth(device, logits_per_image.shape[0])
+        labels = torch.arange(logits_per_image.shape[0], device=device, dtype=torch.int64)
 
         loss_i2t = Fun.cross_entropy(input=logits_per_image, target=labels, reduction=reduction)
         loss_t2i = Fun.cross_entropy(input=logits_per_text, target=labels, reduction=reduction)

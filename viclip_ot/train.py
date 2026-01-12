@@ -323,7 +323,7 @@ def train_model(args: argparse.Namespace) -> None:
 
     global_step = 0
     training_start_time = time.perf_counter()
-    criterion = losses.ClipLoss(cache_labels=True)
+    criterion = losses.ClipLoss()
     for epoch in range(args.num_epochs):
         model.train()
 
