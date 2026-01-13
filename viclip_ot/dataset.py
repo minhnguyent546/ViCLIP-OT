@@ -1,6 +1,9 @@
 import json
 import os
+from collections import defaultdict
+from typing import Literal
 
+import numpy as np
 import torch
 from PIL import Image
 from pydantic import BaseModel
@@ -26,7 +29,7 @@ class ImageTextData(BaseModel):
     annotations: list[ImageTextDataAnnotation]
 
 
-class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str, int]]):
+class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int]]):
     """
     Dataset structure:
 
@@ -78,29 +81,27 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str, int]]):
         )
         self.id_to_image_path = {image.id: image.image_path for image in self.metadata.images}
 
-        # flatten Samples: create a list of (image_path, caption, image_id) tuples
-        self.samples = []
+        captions_by_image_id = defaultdict(list)
         for annotation in self.metadata.annotations:
             image_id = annotation.image_id
             if image_id in self.id_to_image_path:
-                self.samples.append(
-                    (
-                        os.path.join(self.root_dir, self.id_to_image_path[image_id]),
-                        annotation.caption,
-                        image_id,
-                    )
-                )
+                captions_by_image_id[image_id].append(annotation.caption)
             else:
                 logger.warning(
                     f"Could not find image with ID {image_id} for annotation {annotation.id}"
                 )
-        logger.info(f"Total (image, text) pairs: {len(self.samples)}")
+
+        self.samples = [
+            (os.path.join(self.root_dir, self.id_to_image_path[image_id]), captions, image_id)
+            for image_id, captions in captions_by_image_id.items()
+        ]
+        logger.info(f"Total (image, texts) pairs: {len(self.samples)}")
 
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx) -> tuple[Image.Image | Tensor, str, int]:
-        image_path, caption, image_id = self.samples[idx]
+    def __getitem__(self, idx) -> tuple[Image.Image | Tensor, list[str], int]:
+        image_path, captions, image_id = self.samples[idx]
 
         try:
             image = Image.open(image_path)
@@ -120,28 +121,52 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, str, int]]):
 
         # https://huggingface.co/google/embeddinggemma-300m#prompt-instructions
         # TODO: this prompt is for encode document, consider supporting encode for query.
-        formatted_caption = f"title: none | text: {caption}"
+        formatted_captions = [f"title: none | text: {caption}" for caption in captions]
 
-        return image, formatted_caption, int(image_id)
+        return image, formatted_captions, int(image_id)
 
 
 class ImageTextCollate:
-    def __init__(self, tokenizer, max_length: int = 2048):
+    def __init__(
+        self,
+        tokenizer,
+        max_length: int = 2048,
+        caption_to_use: Literal["first", "random", "all"] = "all",
+    ):
         self.tokenizer = tokenizer
         self.max_length = max_length
+        self.caption_to_use = caption_to_use
 
     def __call__(self, batch):
-        images, texts, image_ids = zip(*batch, strict=True)
+        images, captions, image_ids = zip(*batch, strict=True)
 
-        if torch.is_tensor(images[0]):
-            images = torch.stack(images)
+        images = torch.stack(images)
+        image_ids = torch.tensor(image_ids, dtype=torch.int64)
+
+        if self.caption_to_use == "first":
+            captions = [caption[0] for caption in captions]
+        elif self.caption_to_use == "random":
+            captions = [caption[np.random.randint(0, len(caption) - 1)] for caption in captions]
+        elif self.caption_to_use == "all":
+            # flatten caption and repeat images accordingly
+            flat_captions = []
+            repeat_counts = []
+            for caption_list in captions:
+                flat_captions.extend(caption_list)
+                repeat_counts.append(len(caption_list))
+
+            # Repeat images to match flattened captions
+            images = torch.repeat_interleave(images, torch.tensor(repeat_counts), dim=0)
+            image_ids = torch.repeat_interleave(image_ids, torch.tensor(repeat_counts), dim=0)
+            captions = flat_captions
         else:
-            images = torch.stack(images)
-
-        image_ids = torch.tensor(image_ids, dtype=torch.long)
+            raise ValueError(
+                f"Invalid caption_to_use: {self.caption_to_use}. "
+                f"Expected one of ['first', 'random', 'all']"
+            )
 
         text_inputs = self.tokenizer(
-            list(texts),
+            list(captions),
             padding=True,  # Dynamic padding (pad to longest in batch)
             truncation=True,
             max_length=self.max_length,
