@@ -330,7 +330,7 @@ def _compute_retrieval_metrics(
     """ "Compute recall@k and mean rank."""
 
     results = {}
-    max_k = max(k_vals)
+    max_k = min(max(k_vals), logits.shape[1])
     _, top_indices = logits.topk(max_k, dim=1)  # [B, max_k]
 
     # gather ground truth booleans at the retrieved positions
@@ -349,7 +349,7 @@ def _compute_retrieval_metrics(
 
     # find the first rank (min index) where sorted_mask is True
     rank_matrix = torch.arange(logits.shape[1]).view(1, -1).float()
-    masked_ranks = rank_matrix.clone()
+    masked_ranks = rank_matrix.expand(logits.shape[0], -1).clone()
     masked_ranks[~sorted_mask] = float("inf")
 
     # get the "Best Rank" (lowest index) for every row
