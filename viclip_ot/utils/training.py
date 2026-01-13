@@ -340,7 +340,7 @@ def _compute_retrieval_metrics(
     for k in k_vals:
         # hit if at least one of the top k is True
         hits = retrieved_mask[:, :k].any(dim=1)
-        results[f"{prefix}_R@{k}"] = hits.float().mean().item()
+        results[f"{prefix}_R__{k}"] = hits.float().mean().item()
 
     argsort = torch.argsort(logits, dim=1, descending=True)
 
