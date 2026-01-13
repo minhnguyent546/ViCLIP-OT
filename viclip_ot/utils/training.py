@@ -233,6 +233,7 @@ def eval_model(
                 model_outputs = model(images, text_inputs)
                 image_features = model_outputs["image_features"]
                 text_features = model_outputs["text_features"]
+                logit_scale = model_outputs["logit_scale"]
 
                 loss = criterion(
                     image_features=image_features,
