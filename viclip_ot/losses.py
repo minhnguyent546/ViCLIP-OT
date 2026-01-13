@@ -170,9 +170,13 @@ class ClipLoss(nn.Module):
         text_features: Tensor,
         logit_scale: Tensor,
         logit_bias: Tensor | None = None,
+        image_ids: Tensor | None = None,
         output_dict: bool = False,
         reduction: str = "mean",
     ):
+        """
+        If `image_ids` is provided, the computation will take into account image with multiple captions.
+        """
         device = image_features.device
         logits_per_image, logits_per_text = self.get_logits(
             image_features,
@@ -181,10 +185,25 @@ class ClipLoss(nn.Module):
             logit_bias=logit_bias,
         )
 
-        labels = torch.arange(logits_per_image.shape[0], device=device, dtype=torch.int64)
+        if image_ids is None:
+            # 1-1 matching between image and text
+            labels = torch.arange(logits_per_image.shape[0], device=device, dtype=torch.int64)
 
-        loss_i2t = Fun.cross_entropy(input=logits_per_image, target=labels, reduction=reduction)
-        loss_t2i = Fun.cross_entropy(input=logits_per_text, target=labels, reduction=reduction)
+            loss_i2t = Fun.cross_entropy(
+                input=logits_per_image, target=labels, reduction=reduction
+            )
+            loss_t2i = Fun.cross_entropy(input=logits_per_text, target=labels, reduction=reduction)
+        else:
+            image_ids = image_ids.to(device)
+            # shape: (batch_size, batch_size)
+            matches = image_ids.view(-1, 1) == image_ids.view(1, -1)
+
+            # create soft labels (probs)
+            soft_labels = matches.float()
+            soft_labels = soft_labels / soft_labels.sum(dim=1, keepdim=True)
+            loss_i2t = Fun.cross_entropy(logits_per_image, soft_labels, reduction=reduction)
+            loss_t2i = Fun.cross_entropy(logits_per_text, soft_labels, reduction=reduction)
+
         total_loss = (loss_i2t + loss_t2i) / 2
 
         return {"loss": total_loss} if output_dict else total_loss
