@@ -1,4 +1,4 @@
-name: Check imports
+name: Check imports and lint with ruff
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.12", "3.13"]
     steps:
       - name: Clone the repository
         uses: actions/checkout@v4
