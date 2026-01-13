@@ -136,7 +136,7 @@ def train_model(args: argparse.Namespace) -> None:
         f"val_size = {len(val_dataset)} "
     )
 
-    collate_fun = ImageTextCollate(tokenizer=tokenizer)
+    collate_fun = ImageTextCollate(tokenizer=tokenizer, caption_to_use="all")
     # creating data loaders
     train_data_loader = DataLoader(
         train_dataset,
@@ -377,6 +377,7 @@ def train_model(args: argparse.Namespace) -> None:
             if num_batches == 1:
                 images = batches[0]["images"].to(device=device, non_blocking=True)
                 text_inputs = batches[0]["text_inputs"].to(device=device, non_blocking=True)
+                image_ids = batches[0]["image_ids"]
 
                 with autocast_context:
                     model_outputs = model(images, text_inputs)
@@ -385,6 +386,7 @@ def train_model(args: argparse.Namespace) -> None:
                         text_features=model_outputs["text_features"],
                         logit_scale=model_outputs["logit_scale"],
                         logit_bias=model_outputs.get("logit_bias", None),
+                        image_ids=image_ids,
                         reduction="sum",
                     )
                     if num_items_in_batch > 0:
@@ -399,7 +401,7 @@ def train_model(args: argparse.Namespace) -> None:
                     for batch in batches:
                         images = batch["images"].to(device=device, non_blocking=True)
                         text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
-
+                        image_ids = batch["image_ids"]
                         with autocast_context:
                             model_outputs = model(images, text_inputs)
                             for key in ("logit_scale", "logit_bias"):
@@ -409,10 +411,13 @@ def train_model(args: argparse.Namespace) -> None:
                                     cached_features[key] = []
                                 cached_features[key].append(value)
 
+                all_image_ids = torch.cat([batch["image_ids"] for batch in batches], dim=0)
+                accum_num_samples = 0
                 # step 2: re-do the forward pass for those batches, and use the cache features
                 for batch_idx, batch in enumerate(batches):
                     images = batch["images"].to(device=device, non_blocking=True)
                     text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
+                    image_ids = batch["image_ids"]
 
                     with autocast_context:
                         model_outputs = model(images, text_inputs)
@@ -431,16 +436,27 @@ def train_model(args: argparse.Namespace) -> None:
                         loss = criterion(
                             **outputs_for_loss,
                             **outputs_no_cached,
+                            image_ids=torch.cat(
+                                [
+                                    all_image_ids[:accum_num_samples],
+                                    image_ids,
+                                    all_image_ids[accum_num_samples + image_ids.size(0) :],
+                                ]
+                            ),
                             reduction="sum",
                         )
                         del outputs_for_loss
                         del outputs_no_cached
+
+                        accum_num_samples += image_ids.size(0)
 
                         if num_items_in_batch > 0:
                             loss = loss / num_items_in_batch
 
                     scaler.scale(loss).backward()
                     batch_loss += loss.detach().item() / num_batches
+
+                del cached_features
 
             grad_norm_value = 0.0
             if args.max_grad_norm > 0:
@@ -521,6 +537,7 @@ def train_model(args: argparse.Namespace) -> None:
         # validation
         val_results = eval_model(
             model=model,
+            criterion=criterion,
             eval_data_loader=val_data_loader,
             device=device,
         )
@@ -537,6 +554,7 @@ def train_model(args: argparse.Namespace) -> None:
         # testing
         test_results = eval_model(
             model=model,
+            criterion=criterion,
             eval_data_loader=test_data_loader,
             device=device,
         )
