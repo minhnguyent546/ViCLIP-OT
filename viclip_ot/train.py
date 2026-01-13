@@ -83,7 +83,7 @@ def train_model(args: argparse.Namespace) -> None:
             freeze_bn_stats=args.lock_image_freeze_bn_stats,
         )
     if args.lock_text:
-        model.lock_text_tower()
+        model.lock_text_tower(unfreeze_dense=args.lock_text_unfreeze_dense)
 
     # loading dataset
     train_transforms = v2.Compose(

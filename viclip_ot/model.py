@@ -49,7 +49,10 @@ class ViCLIPOTConfig(BaseModel):
 
 
 class ImageEncoder(nn.Module):
-    _SUPPORTED_MODELS = ["timm/convnext_base.dinov3_lvd1689m"]
+    _SUPPORTED_MODELS = [
+        "timm/convnext_base.dinov3_lvd1689m",
+        "timm/convnext_small.dinov3_lvd1689m",
+    ]
 
     def __init__(
         self,
@@ -225,7 +228,11 @@ class TextEncoder(nn.Module):
         )
         self.encoder = AutoModel.from_pretrained(self.config.model_name, trust_remote_code=True)
 
-        self.dense = nn.Sequential(*[self._load_dense(ds) for ds in sorted(dense_subs)])
+        # self.dense = nn.Sequential(*[self._load_dense(ds) for ds in sorted(dense_subs)])
+        dense_layers = [self._load_dense(ds) for ds in sorted(dense_subs)]
+        if dense_layers and dense_layers[-1][-1] == nn.Identity():  # pyright: ignore[reportIndexIssue]
+            dense_layers[-1][-1] = nn.GELU()  # pyright: ignore[reportIndexIssue]
+        self.dense = nn.Sequential(*dense_layers)
 
     def _load_dense(self, subfolder: str) -> nn.Module:
         cfg_p = hf_hub_download(self.config.model_name, filename=f"{subfolder}/config.json")
@@ -266,13 +273,14 @@ class TextEncoder(nn.Module):
 
         return nn.Sequential(lin, activation_fun)
 
-    def freeze(self) -> None:
+    def freeze(self, unfreeze_dense: bool = False) -> None:
         for param in self.encoder.parameters():
             param.requires_grad = False
 
-        if hasattr(self, "dense"):
-            for param in self.dense.parameters():
-                param.requires_grad = False
+        if not unfreeze_dense:
+            if hasattr(self, "dense"):
+                for param in self.dense.parameters():
+                    param.requires_grad = False
 
     def get_embeddings(self, inputs: dict[str, Tensor], *, normalize: bool = False) -> Tensor:
         # forward Pass
@@ -339,8 +347,8 @@ class ViCLIPOT(nn.Module):
             last_unfreeze_groups=last_unfreeze_groups, freeze_bn_stats=freeze_bn_stats
         )
 
-    def lock_text_tower(self):
-        self.text_encoder.freeze()
+    def lock_text_tower(self, unfreeze_dense: bool = False):
+        self.text_encoder.freeze(unfreeze_dense=unfreeze_dense)
 
     def encode_image(self, image, normalize: bool = False):
         features = self.image_encoder(image)

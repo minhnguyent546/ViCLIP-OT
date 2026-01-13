@@ -229,6 +229,11 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Whether to freeze BatchNorm running stats for any locked layers",
     )
+    group.add_argument(
+        "--lock_text_unfreeze_dense",
+        action="store_true",
+        help="Whether to leave dense layers in text_encoder unlocked",
+    )
 
     # early stopping
     group.add_argument(
