@@ -8,7 +8,6 @@ import numpy as np
 import timm
 import torch
 import torch.nn as nn
-import torch.nn.functional as Fun
 import torchvision
 from torch import Tensor
 from torch.utils.data import DataLoader
@@ -206,6 +205,7 @@ def infer_final_fc(model: nn.Module) -> nn.Module:
 
 def eval_model(
     model: nn.Module,
+    criterion,
     eval_data_loader: DataLoader,  # pyright: ignore[reportMissingTypeArgument]
     device: torch.device,
     autocast_context=None,
@@ -221,42 +221,45 @@ def eval_model(
 
     all_image_features = []
     all_text_features = []
+    all_image_ids = []
     logit_scale = None
     with torch.inference_mode():
         for batch in eval_iter:
             images = batch["images"].to(device=device, non_blocking=True)
             text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
+            image_ids = batch["image_ids"]
 
             with autocast_context:
                 model_outputs = model(images, text_inputs)
                 image_features = model_outputs["image_features"]
                 text_features = model_outputs["text_features"]
-                logit_scale = model_outputs["logit_scale"]
-                all_image_features.append(image_features.cpu())
-                all_text_features.append(text_features.cpu())
-                logits_per_image = logit_scale * image_features @ text_features.t()
-                logits_per_text = logits_per_image.t()
 
-                num_samples = images.shape[0]
-                labels = torch.arange(num_samples, device=device).to(torch.int64)
-                total_loss = (
-                    Fun.cross_entropy(logits_per_image, labels)
-                    + Fun.cross_entropy(logits_per_text, labels)
-                ) / 2
+                loss = criterion(
+                    image_features=image_features,
+                    text_features=text_features,
+                    logit_scale=model_outputs["logit_scale"],
+                    logit_bias=model_outputs.get("logit_bias", None),
+                    image_ids=image_ids,
+                )
 
-            eval_loss.update(total_loss, num_samples)
+            all_image_features.append(image_features.cpu())
+            all_text_features.append(text_features.cpu())
+            all_image_ids.append(image_ids)
+
+            eval_loss.update(loss.item(), images.shape[0])
 
             eval_iter.set_postfix(
                 {
-                    "loss": f"{total_loss:0.4f}",
+                    "loss": f"{loss.item():0.4f}",
                 }
             )
 
         assert logit_scale is not None
-        eval_metrics = get_clip_metrics(
+        eval_metrics = get_retrieval_metrics(
             image_features=torch.cat(all_image_features, dim=0),
             text_features=torch.cat(all_text_features, dim=0),
             logit_scale=logit_scale.cpu(),
+            image_ids=torch.cat(all_image_ids, dim=0),
         )
         eval_metrics["loss"] = eval_loss.avg
 
@@ -266,29 +269,98 @@ def eval_model(
     return eval_metrics  # pyright: ignore[reportReturnType]
 
 
-def get_clip_metrics(
-    image_features: Tensor, text_features: Tensor, logit_scale: Tensor
+def get_retrieval_metrics(
+    image_features: Tensor,
+    text_features: Tensor,
+    logit_scale: Tensor,
+    image_ids: Tensor | None = None,
 ) -> dict[str, Any]:
     """
-    Reference: https://github.com/mlfoundations/open_clip/blob/main/src/open_clip_train/train.py#L360.
+    If `image_ids` is provided, the computation will take into account image with multiple captions.
     """
     metrics: dict[str, Any] = {}
-    logits_per_image = (logit_scale * image_features @ text_features.t()).detach().cpu()
-    logits_per_text = logits_per_image.t().detach().cpu()
+    if image_ids is None:
+        # 1-1 image caption mapping
+        image_ids = torch.arange(len(image_features))
 
-    logits = {"i2t": logits_per_image, "t2i": logits_per_text}
-    ground_truth = torch.arange(len(text_features)).view(-1, 1)
+    image_features = image_features.cpu().float()
+    text_features = text_features.cpu().float()
+    image_ids = image_ids.cpu()
+    image_ids = image_ids.cpu()
 
-    for name, logit in logits.items():
-        ranking = torch.argsort(logit, descending=True)
-        preds = torch.where(ranking == ground_truth)[1]
-        preds = preds.detach().cpu().numpy()
-        metrics[f"{name}_mean_rank"] = preds.mean() + 1
-        metrics[f"{name}_median_rank"] = np.floor(np.median(preds)) + 1
-        for k in [1, 5, 10]:
-            metrics[f"{name}_R__{k}"] = np.mean(preds < k)
+    unique_ids, first_indices = np.unique(image_ids.numpy(), return_index=True)
+    unique_ids = torch.from_numpy(unique_ids)
+    first_indices = torch.from_numpy(first_indices)
+
+    unique_image_features = image_features[first_indices]
+
+    # Image-to-Text
+    # Query:   Unique Images [N_unique]
+    # Gallery: All Texts     [N_total]
+    # Protocol: For each unique image, did we find ANY of its captions?
+    # Logits: [N_unique, N_total]
+    logits_i2t = logit_scale * unique_image_features @ text_features.t()
+
+    # Mask: [N_unique, N_total]
+    # Rows are Unique IDs, Cols are All IDs. Match if they are equal.
+    mask_i2t = unique_ids.view(-1, 1) == image_ids.view(1, -1)
+
+    metrics.update(_compute_retrieval_metrics(logits_i2t, mask_i2t, prefix="i2t"))
+
+    # Text-to-Image
+    # Query:   All Texts     [N_total]
+    # Gallery: Unique Images [N_unique]
+    # Protocol: For each caption, did we find the ONE correct image?
+    # Logits: [N_total, N_unique]
+    logits_t2i = logit_scale * text_features @ unique_image_features.t()
+
+    # Mask: [N_total, N_unique]
+    # Rows are All IDs, Cols are Unique IDs. Match if they are equal.
+    mask_t2i = image_ids.view(-1, 1) == unique_ids.view(1, -1)
+
+    metrics.update(_compute_retrieval_metrics(logits_t2i, mask_t2i, prefix="t2i"))
 
     return metrics
+
+
+def _compute_retrieval_metrics(
+    logits: Tensor, mask: Tensor, prefix: str, k_vals=(1, 5, 10)
+) -> dict[str, Any]:
+    """ "Compute recall@k and mean rank."""
+
+    results = {}
+    max_k = max(k_vals)
+    _, top_indices = logits.topk(max_k, dim=1)  # [B, max_k]
+
+    # gather ground truth booleans at the retrieved positions
+    rows = torch.arange(logits.shape[0]).view(-1, 1)
+    retrieved_mask = mask[rows, top_indices]  # [B, max_k]
+
+    for k in k_vals:
+        # hit if at least one of the top k is True
+        hits = retrieved_mask[:, :k].any(dim=1)
+        results[f"{prefix}_R@{k}"] = hits.float().mean().item()
+
+    argsort = torch.argsort(logits, dim=1, descending=True)
+
+    # sorted_mask[i, j] is True if the item at rank 'j' is a match
+    sorted_mask = mask[rows, argsort]
+
+    # find the first rank (min index) where sorted_mask is True
+    rank_matrix = torch.arange(logits.shape[1]).view(1, -1).float()
+    masked_ranks = rank_matrix.clone()
+    masked_ranks[~sorted_mask] = float("inf")
+
+    # get the "Best Rank" (lowest index) for every row
+    best_rank_per_row = masked_ranks.min(dim=1).values
+
+    # convert 0-indexed to 1-indexed
+    best_rank_per_row = best_rank_per_row.numpy() + 1
+
+    results[f"{prefix}_mean_rank"] = np.mean(best_rank_per_row)
+    results[f"{prefix}_median_rank"] = np.floor(np.median(best_rank_per_row))
+
+    return results
 
 
 def save_top_k_checkpoints(
