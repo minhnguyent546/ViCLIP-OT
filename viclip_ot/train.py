@@ -88,13 +88,14 @@ def train_model(args: argparse.Namespace) -> None:
     # loading dataset
     train_transforms = v2.Compose(
         [
+            v2.RandomRotation(15),  # pyright: ignore[reportArgumentType]
             v2.RandomResizedCrop(
                 size=args.train_crop_size,
-                scale=(0.5, 1.0),
+                scale=(0.8, 1.0),
                 interpolation=v2.InterpolationMode.BICUBIC,
             ),
             v2.RandomHorizontalFlip(p=0.5),
-            v2.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
+            v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.0),
             v2.ToTensor(),
             v2.Normalize(
                 mean=C.IMAGENET_DEFAULT_MEAN,
