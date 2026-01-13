@@ -333,9 +333,15 @@ def train_model(args: argparse.Namespace) -> None:
     # disable logging to stdout during training to avoid conflict with tqdm
     logger.remove(logger_init_config["stdout_id"])
 
+    if args.criterion == "clip_loss":
+        criterion = losses.ClipLoss()
+    elif args.criterion == "sig_lip_loss":
+        criterion = losses.SigLipLoss()
+    else:
+        raise ValueError(f"Unsupported criterion: {args.criterion}")
+
     global_step = 0
     training_start_time = time.perf_counter()
-    criterion = losses.ClipLoss()
     for epoch in range(args.num_epochs):
         model.train()
 

@@ -207,3 +207,95 @@ class ClipLoss(nn.Module):
         total_loss = (loss_i2t + loss_t2i) / 2
 
         return {"loss": total_loss} if output_dict else total_loss
+
+
+class SigLipLoss(nn.Module):
+    """Sigmoid Loss for Language Image Pre-Training (SigLIP) - https://arxiv.org/abs/2303.15343
+
+    Adapted from: https://github.com/mlfoundations/open_clip/blob/d3cdb734a2710feeb4c6307df037afa5f786a3e1/src/open_clip/loss.py#L330
+
+    @article{zhai2023sigmoid,
+      title={Sigmoid loss for language image pre-training},
+      author={Zhai, Xiaohua and Mustafa, Basil and Kolesnikov, Alexander and Beyer, Lucas},
+      journal={arXiv preprint arXiv:2303.15343},
+      year={2023}
+    }
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def get_ground_truth(
+        self,
+        device: torch.device,
+        dtype: torch.dtype,
+        num_logits: int,
+        negative_only: bool = False,
+    ) -> torch.Tensor:
+        labels = -torch.ones((num_logits, num_logits), device=device, dtype=dtype)
+        if not negative_only:
+            labels = 2 * torch.eye(num_logits, device=device, dtype=dtype) + labels
+        return labels
+
+    def get_logits(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+    ):
+        # shape: (batch_size, batch_size)
+        logits = logit_scale * image_features @ text_features.T
+        if logit_bias is not None:
+            logits += logit_bias
+        return logits
+
+    def _loss(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+        negative_only: bool = False,
+        reduction: str = "mean",
+    ) -> Tensor:
+        # shape: (batch_size, batch_size)
+        logits = self.get_logits(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            logit_bias=logit_bias,
+        )
+        # shape: (batch_size, batch_size)
+        labels = self.get_ground_truth(
+            device=image_features.device,
+            dtype=image_features.dtype,
+            num_logits=image_features.shape[0],
+            negative_only=negative_only,
+        )
+        loss = -Fun.logsigmoid(labels * logits).sum()
+
+        if reduction == "mean":
+            loss = loss / image_features.shape[0]
+
+        return loss
+
+    def forward(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+        output_dict: bool = False,
+        reduction: str = "mean",
+        image_ids: Tensor | None = None,  # only for compatibility with ClipLoss
+    ):
+        loss = self._loss(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            logit_bias=logit_bias,
+            reduction=reduction,
+        )
+
+        return {"loss": loss} if output_dict else loss

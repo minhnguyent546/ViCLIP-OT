@@ -105,6 +105,13 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         help="Whether to perform linear probing (only train the final classifier layer)",
     )
     group.add_argument(
+        "--criterion",
+        type=str,
+        help="Which loss criterion to use",
+        choices=["clip_loss", "sig_lip_loss"],
+        default="clip_loss",
+    )
+    group.add_argument(
         "--num_epochs",
         type=int,
         help="Number of training epochs",
