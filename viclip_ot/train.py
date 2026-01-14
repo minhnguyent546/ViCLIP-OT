@@ -247,7 +247,7 @@ def train_model(args: argparse.Namespace) -> None:
                 nn.InstanceNorm3d,
                 nn.Embedding,
             ],
-            forbidden_layer_names=["bias", "norm"],
+            forbidden_layer_names=["bias", "norm", "logit_scale"],
         )
     )
 
