@@ -264,7 +264,7 @@ def train_model(args: argparse.Namespace) -> None:
     def has_prefix(name: str, prefixes: tuple[str, ...]) -> bool:
         return any(name.startswith(p) for p in prefixes)
 
-    def collect(prefixes, do_decay: bool):
+    def collect(prefixes: tuple[str, ...], do_decay: bool):
         return [
             p
             for n, p in model.named_parameters()
@@ -299,7 +299,10 @@ def train_model(args: argparse.Namespace) -> None:
             "name": "no_decay__adapters",
         },
     ]
-
+    for i, param_group in enumerate(param_groups):
+        logger.debug(
+            f"param_group: {param_group.get('name', i)} | num_params: {len(param_group['params'])}"  # pyright: ignore[reportArgumentType]
+        )
     # --- sanity checks (catch silent bugs) ---
     all_trainable = {id(p) for p in model.parameters() if p.requires_grad}
     grouped = {id(p) for g in param_groups for p in g["params"]}  # pyright: ignore[reportGeneralTypeIssues]
