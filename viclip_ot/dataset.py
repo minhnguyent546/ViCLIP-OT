@@ -121,7 +121,7 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int]]):
 
         # https://huggingface.co/google/embeddinggemma-300m#prompt-instructions
         # TODO: this prompt is for encode document, consider supporting encode for query.
-        formatted_captions = [f"title: none | text: {caption}" for caption in captions]
+        formatted_captions = [f"sentence similarity | query: {caption}" for caption in captions]
 
         return image, formatted_captions, int(image_id)
 
