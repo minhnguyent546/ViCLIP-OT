@@ -176,15 +176,17 @@ class TextEncoder(nn.Module):
                 f"Unsupported model: {self.config.model_name}. Call `list_models()` to see supported models."
             )
 
+        self.encoder = AutoModel.from_pretrained(self.config.model_name, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.config.model_name, trust_remote_code=True
+        )
+
         if self.config.model_name == "google/embeddinggemma-300m":
-            self._prepare_embeddinggemma_300m()
+            self._add_dense_for_embeddinggemma_300m()
         else:
             raise NotImplementedError(
                 f"TextEncoder for model {self.config.model_name} is not implemented yet."
             )
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.config.model_name, trust_remote_code=True
-        )
 
         # TODO: works for Gemma3, make more general
         intermediate_embed_dim = self.encoder.config.hidden_size
@@ -211,9 +213,8 @@ class TextEncoder(nn.Module):
     def list_models(cls) -> list[str]:
         return cls._SUPPORTED_MODELS
 
-    def _prepare_embeddinggemma_300m(self) -> None:
-        """Download pre-trained weights and sentence-transformers stuff
-        to be able to use the model with Hugging Face."""
+    def _add_dense_for_embeddinggemma_300m(self) -> None:
+        """Add dense layers for embeddinggemma-300m model."""
         if not self.config.model_name == "google/embeddinggemma-300m":
             raise ValueError(
                 "_prepare_embeddinggemma_300m is only applicable for 'google/embeddinggemma-300m' model."
@@ -234,13 +235,6 @@ class TextEncoder(nn.Module):
         logger.info(f"[TextEncoder - embeddinggemma-300m] Dense subfolders: {dense_subs}")
         logger.info(f"[TextEncoder - embeddinggemma-300m] Has Normalize: {norm_exists}")
 
-        # load backbone and tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.config.model_name, trust_remote_code=True
-        )
-        self.encoder = AutoModel.from_pretrained(self.config.model_name, trust_remote_code=True)
-
-        # self.dense = nn.Sequential(*[self._load_dense(ds) for ds in sorted(dense_subs)])
         dense_layers = [self._load_dense(ds) for ds in sorted(dense_subs)]
         if dense_layers and dense_layers[-1][-1] == nn.Identity():  # pyright: ignore[reportIndexIssue]
             dense_layers[-1][-1] = nn.GELU()  # pyright: ignore[reportIndexIssue]

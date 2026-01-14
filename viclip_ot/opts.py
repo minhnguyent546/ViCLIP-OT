@@ -162,6 +162,12 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default=1.0e-4,
     )
     group.add_argument(
+        "--backbone_lr",
+        type=float,
+        help="Learning rate for backbone parameters, should be set lower than or equal to `--lr`",
+        default=1.0e-5,
+    )
+    group.add_argument(
         "--weight_decay",
         type=float,
         help="Weight decay",

@@ -256,24 +256,62 @@ def train_model(args: argparse.Namespace) -> None:
     logger.debug(
         f"No decay params: {[name for name, _param in model.named_parameters() if name not in decay_parameters]}"
     )
+    backbone_modules = [
+        model.text_encoder.encoder,
+        model.image_encoder.trunk,
+    ]
+    adapters_modules = [
+        model.text_encoder.dense,
+        model.text_encoder.fc,
+        model.image_encoder.head,
+    ]
     param_groups = [
         {
             "params": [
-                param for name, param in model.named_parameters() if name in decay_parameters
+                param
+                for backbone_module in backbone_modules
+                for name, param in backbone_module.parameters()
+                if name in decay_parameters
             ],
             "weight_decay": args.weight_decay,
+            "lr": args.backbone_lr,
+            "name": "decay__backbone",
         },
         {
             "params": [
-                param for name, param in model.named_parameters() if name not in decay_parameters
+                param
+                for backbone_module in backbone_modules
+                for name, param in backbone_module.parameters()
+                if name not in decay_parameters
             ],
             "weight_decay": 0.0,
+            "lr": args.backbone_lr,
+            "name": "no_decay__backbone",
+        },
+        {
+            "params": [
+                param
+                for adapters_module in adapters_modules
+                for name, param in adapters_module.parameters()
+                if name in decay_parameters
+            ],
+            "weight_decay": args.weight_decay,
+            "lr": args.lr,
+            "name": "decay__adapters",
+        },
+        {
+            "params": [
+                param
+                for adapters_module in adapters_modules
+                for name, param in adapters_module.parameters()
+                if name not in decay_parameters
+            ],
+            "weight_decay": 0.0,
+            "lr": args.lr,
+            "name": "no_decay__adapters",
         },
     ]
-    optimizer = AdamW(
-        param_groups,
-        lr=args.lr,
-    )
+    optimizer = AdamW(param_groups)
 
     num_updates_per_epoch = (
         len(train_data_loader) + args.gradient_accum_steps - 1
@@ -286,9 +324,10 @@ def train_model(args: argparse.Namespace) -> None:
             eta_min=args.min_lr,
         )
     elif args.scheduler == "one_cycle_lr":
+        max_lrs = [param_group["lr"] for param_group in optimizer.param_groups]
         main_lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer=optimizer,
-            max_lr=args.lr,
+            max_lr=max_lrs,
             pct_start=0.0,  # warmup is now can be used via a separate scheduler
             epochs=args.num_epochs - args.lr_warmup_epochs,
             steps_per_epoch=num_updates_per_epoch,
@@ -497,7 +536,7 @@ def train_model(args: argparse.Namespace) -> None:
 
             if wandb_run is not None:
                 log_data = {
-                    f"learning_rate/group_{group_id}": param_group["lr"]
+                    f"learning_rate/group_{param_group.get('name', group_id)}": param_group["lr"]
                     for group_id, param_group in enumerate(optimizer.param_groups)
                 }
                 log_data["train/loss"] = batch_loss
