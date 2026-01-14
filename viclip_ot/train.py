@@ -49,11 +49,13 @@ def train_model(args: argparse.Namespace) -> None:
         else:
             log_file = os.path.join(checkpoint_dir, "train.log")
 
-    logger_init_config = init_logger(level="DEBUG", log_file=log_file, compact=True)
+    logger_init_config = init_logger(
+        level="DEBUG", log_file=log_file, compact=True)
     utils.set_seed(args.seed)
     logger.info(f"Seed: {args.seed}")
     logger.info(f"Args: {args}")
-    logger.info(f"Effective batch size: {args.train_batch_size * args.gradient_accum_steps}")
+    logger.info(
+        f"Effective batch size: {args.train_batch_size * args.gradient_accum_steps}")
 
     # training device
     device = utils.get_device(args.device)
@@ -61,7 +63,8 @@ def train_model(args: argparse.Namespace) -> None:
 
     # creating model
 
-    model_config = ViCLIPOTConfig.model_validate(utils.load_yaml_file(args.model_config))
+    model_config = ViCLIPOTConfig.model_validate(
+        utils.load_yaml_file(args.model_config))
     logger.info(f"Model config: {model_config}")
     model = ViCLIPOT(config=model_config)
     tokenizer = model.text_encoder.tokenizer
@@ -69,11 +72,13 @@ def train_model(args: argparse.Namespace) -> None:
     model.to(device)
 
     if args.linear_probing:
-        raise NotImplementedError("Loading from checkpoint is not implemented yet.")
+        raise NotImplementedError(
+            "Loading from checkpoint is not implemented yet.")
         logger.info("Linear probing enabled")
 
     if args.from_checkpoint is not None:
-        raise NotImplementedError("Loading from checkpoint is not implemented yet.")
+        raise NotImplementedError(
+            "Loading from checkpoint is not implemented yet.")
         logger.info(f"Loading model from checkpoint: {args.from_checkpoint}")
         checkpoint = torch.load(args.from_checkpoint, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -96,7 +101,8 @@ def train_model(args: argparse.Namespace) -> None:
                 interpolation=v2.InterpolationMode.BICUBIC,
             ),
             v2.RandomHorizontalFlip(p=0.5),
-            v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.0),
+            v2.ColorJitter(brightness=0.2, contrast=0.2,
+                           saturation=0.2, hue=0.0),
             v2.ToTensor(),
             v2.Normalize(
                 mean=C.IMAGENET_DEFAULT_MEAN,
@@ -106,7 +112,8 @@ def train_model(args: argparse.Namespace) -> None:
     )
     eval_transforms = v2.Compose(
         [
-            v2.Resize(size=args.eval_resize_size, interpolation=v2.InterpolationMode.BICUBIC),
+            v2.Resize(size=args.eval_resize_size,
+                      interpolation=v2.InterpolationMode.BICUBIC),
             v2.CenterCrop(size=args.eval_crop_size),
             v2.ToTensor(),
             v2.Normalize(
@@ -223,7 +230,8 @@ def train_model(args: argparse.Namespace) -> None:
         )
 
     num_model_params = utils.count_model_params(model, trainable=False)
-    num_model_trainable_params = utils.count_model_params(model, trainable=True)
+    num_model_trainable_params = utils.count_model_params(
+        model, trainable=True)
     logger.info(
         f"num_params: {utils.to_human_readable(num_model_params)} | num_trainable_params: {utils.to_human_readable(num_model_trainable_params)}"
     )
@@ -328,9 +336,12 @@ def train_model(args: argparse.Namespace) -> None:
         main_lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer=optimizer,
             max_lr=max_lrs,
-            pct_start=0.0,  # warmup is now can be used via a separate scheduler
+            pct_start=0.05,  # warmup is now can be used via a separate scheduler
             epochs=args.num_epochs - args.lr_warmup_epochs,
             steps_per_epoch=num_updates_per_epoch,
+            div_factor=1.0,
+            final_div_factor=1e4,
+            anneal_strategy="cos",
         )
     else:
         raise ValueError(f"Unsupported scheduler: {args.scheduler}")
@@ -357,7 +368,8 @@ def train_model(args: argparse.Namespace) -> None:
 
     optimizer.zero_grad()
     if args.max_grad_norm > 0:
-        logger.info(f"Using gradient clipping with max norm {args.max_grad_norm}")
+        logger.info(
+            f"Using gradient clipping with max norm {args.max_grad_norm}")
 
     # results for each metric will be sorted in decreasing order
     # metric with prefix '_' indicates lower is better (e.g. _loss)
@@ -375,7 +387,8 @@ def train_model(args: argparse.Namespace) -> None:
         patience=args.early_stopping_patience, min_delta=0.0, enabled=args.early_stopping
     )
     if early_stopping.is_enabled():
-        logger.info(f"Early stopping enabled with patience {early_stopping.patience}")
+        logger.info(
+            f"Early stopping enabled with patience {early_stopping.patience}")
 
     # disable logging to stdout during training to avoid conflict with tqdm
     logger.remove(logger_init_config["stdout_id"])
@@ -428,8 +441,10 @@ def train_model(args: argparse.Namespace) -> None:
             batch_loss: float = 0.0
 
             if num_batches == 1:
-                images = batches[0]["images"].to(device=device, non_blocking=True)
-                text_inputs = batches[0]["text_inputs"].to(device=device, non_blocking=True)
+                images = batches[0]["images"].to(
+                    device=device, non_blocking=True)
+                text_inputs = batches[0]["text_inputs"].to(
+                    device=device, non_blocking=True)
                 image_ids = batches[0]["image_ids"]
 
                 with autocast_context:
@@ -452,8 +467,10 @@ def train_model(args: argparse.Namespace) -> None:
                 cached_features = {}
                 with torch.no_grad():
                     for batch in batches:
-                        images = batch["images"].to(device=device, non_blocking=True)
-                        text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
+                        images = batch["images"].to(
+                            device=device, non_blocking=True)
+                        text_inputs = batch["text_inputs"].to(
+                            device=device, non_blocking=True)
                         image_ids = batch["image_ids"]
                         with autocast_context:
                             model_outputs = model(images, text_inputs)
@@ -464,26 +481,32 @@ def train_model(args: argparse.Namespace) -> None:
                                     cached_features[key] = []
                                 cached_features[key].append(value)
 
-                all_image_ids = torch.cat([batch["image_ids"] for batch in batches], dim=0)
+                all_image_ids = torch.cat(
+                    [batch["image_ids"] for batch in batches], dim=0)
                 accum_num_samples = 0
                 # step 2: re-do the forward pass for those batches, and use the cache features
                 for batch_idx, batch in enumerate(batches):
-                    images = batch["images"].to(device=device, non_blocking=True)
-                    text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
+                    images = batch["images"].to(
+                        device=device, non_blocking=True)
+                    text_inputs = batch["text_inputs"].to(
+                        device=device, non_blocking=True)
                     image_ids = batch["image_ids"]
 
                     with autocast_context:
                         model_outputs = model(images, text_inputs)
 
                         outputs_no_cached = {}
-                        outputs_no_cached["logit_scale"] = model_outputs.pop("logit_scale")
+                        outputs_no_cached["logit_scale"] = model_outputs.pop(
+                            "logit_scale")
                         if "logit_bias" in model_outputs:
-                            outputs_no_cached["logit_bias"] = model_outputs.pop("logit_bias")
+                            outputs_no_cached["logit_bias"] = model_outputs.pop(
+                                "logit_bias")
 
                         outputs_for_loss = {}
                         for key, value in cached_features.items():
                             outputs_for_loss[key] = torch.cat(
-                                value[:batch_idx] + [model_outputs[key]] + value[batch_idx + 1 :],
+                                value[:batch_idx] + [model_outputs[key]
+                                                     ] + value[batch_idx + 1:],
                             )
 
                         loss = criterion(
@@ -493,7 +516,8 @@ def train_model(args: argparse.Namespace) -> None:
                                 [
                                     all_image_ids[:accum_num_samples],
                                     image_ids,
-                                    all_image_ids[accum_num_samples + image_ids.size(0) :],
+                                    all_image_ids[accum_num_samples +
+                                                  image_ids.size(0):],
                                 ]
                             ),
                             reduction="sum",
@@ -532,7 +556,9 @@ def train_model(args: argparse.Namespace) -> None:
 
             # note: we clamp to 4.6052 = ln(100), as in the original paper.
             with torch.no_grad():
-                model.logit_scale.clamp_(min=0, max=np.log(100))
+                # model.logit_scale.clamp_(min=0, max=np.log(100))
+                # model.logit_scale.data.clamp_(min=np.log(1/100), max=np.log(100))
+                pass
 
             if wandb_run is not None:
                 log_data = {
@@ -594,7 +620,8 @@ def train_model(args: argparse.Namespace) -> None:
             eval_data_loader=val_data_loader,
             device=device,
         )
-        print_eval_results(eval_results=val_results, prefix="val", epoch=epoch + 1, logger=logger)
+        print_eval_results(eval_results=val_results,
+                           prefix="val", epoch=epoch + 1, logger=logger)
 
         maybe_log_eval_results(
             eval_results=val_results,

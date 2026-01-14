@@ -36,7 +36,8 @@ class ViCLIPOTTextConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_name: str
-    proj: Literal["linear", "none"] = "none"  # 'none' means no projection layer
+    # 'none' means no projection layer
+    proj: Literal["linear", "none"] = "none"
     proj_bias: bool = False
 
 
@@ -79,11 +80,14 @@ class ImageEncoder(nn.Module):
         feat_size = trunk_default_config["pool_size"]
         if is_custom_pool:
             # if attn pooling used, remove both classifier and default pool
-            self.trunk.reset_classifier(num_classes=0, global_pool="")  # pyright: ignore[reportCallIssue]
+            # pyright: ignore[reportCallIssue]
+            self.trunk.reset_classifier(num_classes=0, global_pool="")
         else:
             # reset global pool if pool config set, otherwise leave as network default
-            reset_kwargs = {"global_pool": self.config.pool} if self.config.pool else {}
-            self.trunk.reset_classifier(0, **reset_kwargs)  # pyright: ignore[reportCallIssue]
+            reset_kwargs = {
+                "global_pool": self.config.pool} if self.config.pool else {}
+            # pyright: ignore[reportCallIssue]
+            self.trunk.reset_classifier(0, **reset_kwargs)
 
         prev_chs: int = self.trunk.num_features
 
@@ -96,7 +100,8 @@ class ImageEncoder(nn.Module):
             )
             prev_chs = embed_dim
         elif self.config.pool == "rot_attn":
-            head_layers["pool"] = RotAttentionPool2d(in_features=prev_chs, out_features=embed_dim)
+            head_layers["pool"] = RotAttentionPool2d(
+                in_features=prev_chs, out_features=embed_dim)
             prev_chs = embed_dim
 
         # NOTE attention pool ends with a projection layer, so proj should usually be set to '' if such pooling is used
@@ -107,7 +112,8 @@ class ImageEncoder(nn.Module):
             )
             # Initialize with Xavier/Glorot for better gradient flow in contrastive learning
             nn.init.xavier_uniform_(proj_layer.weight)
-            if proj_layer.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
+            # pyright: ignore[reportUnnecessaryComparison]
+            if proj_layer.bias is not None:
                 nn.init.zeros_(proj_layer.bias)
             head_layers["proj"] = proj_layer
         elif self.config.proj == "mlp":
@@ -136,7 +142,8 @@ class ImageEncoder(nn.Module):
                 freeze_batch_norm_2d(self.trunk)
         else:
             # NOTE: partial freeze requires latest timm (master) branch and is subject to change
-            matcher = self.trunk.group_matcher()  # pyright: ignore[reportCallIssue]
+            # pyright: ignore[reportCallIssue]
+            matcher = self.trunk.group_matcher()
             gparams = group_parameters(self.trunk, matcher)
             max_layer_id = max(gparams.keys())
             max_layer_id = max_layer_id - last_unfreeze_groups
@@ -146,7 +153,8 @@ class ImageEncoder(nn.Module):
                     self.trunk.get_parameter(param).requires_grad = False
             if freeze_bn_stats:
                 gmodules = group_modules(self.trunk, matcher, reverse=True)
-                gmodules = {k for k, v in gmodules.items() if v <= max_layer_id}
+                gmodules = {k for k, v in gmodules.items() if v <=
+                            max_layer_id}
                 freeze_batch_norm_2d(self.trunk, gmodules)
 
     @classmethod
@@ -176,7 +184,8 @@ class TextEncoder(nn.Module):
                 f"Unsupported model: {self.config.model_name}. Call `list_models()` to see supported models."
             )
 
-        self.encoder = AutoModel.from_pretrained(self.config.model_name, trust_remote_code=True)
+        self.encoder = AutoModel.from_pretrained(
+            self.config.model_name, trust_remote_code=True)
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.config.model_name, trust_remote_code=True
         )
@@ -193,12 +202,14 @@ class TextEncoder(nn.Module):
         assert intermediate_embed_dim is not None, "Failed to get sentence embedding dimension."
 
         if self.config.proj == "linear":
-            self.fc = nn.Linear(intermediate_embed_dim, embed_dim, bias=self.config.proj_bias)
+            self.fc = nn.Linear(intermediate_embed_dim,
+                                embed_dim, bias=self.config.proj_bias)
 
             # Initialize the projection layer with Xavier/Glorot initialization
             # to help with gradient flow in contrastive learning
             nn.init.xavier_uniform_(self.fc.weight)
-            if self.fc.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
+            # pyright: ignore[reportUnnecessaryComparison]
+            if self.fc.bias is not None:
                 nn.init.zeros_(self.fc.bias)
         elif self.config.proj == "none":
             if intermediate_embed_dim != embed_dim:
@@ -221,7 +232,8 @@ class TextEncoder(nn.Module):
             )
 
         # discover module paths
-        modules_path = hf_hub_download(self.config.model_name, filename="modules.json")
+        modules_path = hf_hub_download(
+            self.config.model_name, filename="modules.json")
         with open(modules_path, "r", encoding="utf-8") as f:
             modules = json.load(f)
 
@@ -230,31 +242,41 @@ class TextEncoder(nn.Module):
         dense_subs = [m["path"] for m in modules if "Dense" in m["type"]]
         norm_exists = any("Normalize" in m["type"] for m in modules)
 
-        logger.info(f"[TextEncoder - embeddinggemma-300m] Transformer subfolder: {xf_sub}")
-        logger.info(f"[TextEncoder - embeddinggemma-300m] Pooling subfolder: {pool_sub}")
-        logger.info(f"[TextEncoder - embeddinggemma-300m] Dense subfolders: {dense_subs}")
-        logger.info(f"[TextEncoder - embeddinggemma-300m] Has Normalize: {norm_exists}")
+        logger.info(
+            f"[TextEncoder - embeddinggemma-300m] Transformer subfolder: {xf_sub}")
+        logger.info(
+            f"[TextEncoder - embeddinggemma-300m] Pooling subfolder: {pool_sub}")
+        logger.info(
+            f"[TextEncoder - embeddinggemma-300m] Dense subfolders: {dense_subs}")
+        logger.info(
+            f"[TextEncoder - embeddinggemma-300m] Has Normalize: {norm_exists}")
 
         dense_layers = [self._load_dense(ds) for ds in sorted(dense_subs)]
-        if dense_layers and dense_layers[-1][-1] == nn.Identity():  # pyright: ignore[reportIndexIssue]
-            dense_layers[-1][-1] = nn.GELU()  # pyright: ignore[reportIndexIssue]
+        # pyright: ignore[reportIndexIssue]
+        if dense_layers and dense_layers[-1][-1] == nn.Identity():
+            # pyright: ignore[reportIndexIssue]
+            dense_layers[-1][-1] = nn.GELU()
         self.dense = nn.Sequential(*dense_layers)
 
     def _load_dense(self, subfolder: str) -> nn.Module:
-        cfg_p = hf_hub_download(self.config.model_name, filename=f"{subfolder}/config.json")
+        cfg_p = hf_hub_download(self.config.model_name,
+                                filename=f"{subfolder}/config.json")
         with open(cfg_p, "r", encoding="utf-8") as f:
             cfg = json.load(f)
 
-        lin = torch.nn.Linear(cfg["in_features"], cfg["out_features"], bias=cfg.get("bias", True))
+        lin = torch.nn.Linear(
+            cfg["in_features"], cfg["out_features"], bias=cfg.get("bias", True))
 
         # load weights (safetensors preferred; fall back to bin)
         try:
             st = load_safetensors(
-                hf_hub_download(self.config.model_name, filename=f"{subfolder}/model.safetensors")
+                hf_hub_download(self.config.model_name,
+                                filename=f"{subfolder}/model.safetensors")
             )
         except Exception:
             st = torch.load(
-                hf_hub_download(self.config.model_name, filename=f"{subfolder}/pytorch_model.bin"),
+                hf_hub_download(self.config.model_name,
+                                filename=f"{subfolder}/pytorch_model.bin"),
                 map_location="cpu",
             )
 
@@ -312,7 +334,8 @@ class TextEncoder(nn.Module):
         sum_mask = torch.clamp(input_mask_expanded.sum(1).float(), min=1e-9)
 
         # Calculate mean in float32, then cast back to original dtype
-        embeddings = (sum_embeddings.float() / sum_mask).to(last_hidden_state.dtype)
+        embeddings = (sum_embeddings.float() /
+                      sum_mask).to(last_hidden_state.dtype)
 
         # pass through dense layers
         embeddings = self.dense(embeddings)
@@ -341,11 +364,14 @@ class ViCLIPOT(nn.Module):
             config=config.image_config,
             embed_dim=config.embed_dim,
         )
-        self.text_encoder = TextEncoder(config=config.text_config, embed_dim=config.embed_dim)
-        self.logit_scale = nn.Parameter(torch.tensor(config.logit_scale, dtype=torch.float32))
+        self.text_encoder = TextEncoder(
+            config=config.text_config, embed_dim=config.embed_dim)
+        self.logit_scale = nn.Parameter(torch.tensor(
+            config.logit_scale, dtype=torch.float32))
         self.logit_bias = None
         if config.logit_bias is not None:
-            self.logit_bias = nn.Parameter(torch.tensor(config.logit_bias, dtype=torch.float32))
+            self.logit_bias = nn.Parameter(torch.tensor(
+                config.logit_bias, dtype=torch.float32))
 
     def lock_image_tower(self, last_unfreeze_groups: int = 0, freeze_bn_stats: bool = False):
         # lock image tower as per LiT - https://arxiv.org/abs/2111.07991
@@ -371,6 +397,8 @@ class ViCLIPOT(nn.Module):
     def forward(self, images: Tensor, text_inputs):
         image_features = self.encode_image(images, normalize=True)
         text_features = self.encode_text(text_inputs, normalize=True)
+
+        self.logit_scale.data.clamp_(min=np.log(1/100), max=np.log(100))
 
         output_dict = {
             "image_features": image_features,
