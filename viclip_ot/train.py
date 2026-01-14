@@ -330,7 +330,7 @@ def train_model(args: argparse.Namespace) -> None:
 
     # best_val_results[metric] = list of tuples (value, checkpoint_path)
     best_val_results: dict[str, list[tuple[float, str]]] = {
-        metric: [] for metric in args.best_checkpoint_metrics
+        metric.lstrip("_"): [] for metric in args.best_checkpoint_metrics
     }
     early_stopping = EarlyStopping(
         patience=args.early_stopping_patience, min_delta=0.0, enabled=args.early_stopping
