@@ -310,6 +310,19 @@ def train_model(args: argparse.Namespace) -> None:
     missing = all_trainable - grouped
     extra = grouped - all_trainable
 
+    if missing:
+        print("Missing trainable params:")
+        for n, p in model.named_parameters():
+            if p.requires_grad and id(p) in missing:
+                print("  ", n)
+
+    if extra:
+        print("Frozen params in optimizer:")
+        for n, p in model.named_parameters():
+            if not p.requires_grad and id(p) in extra:
+                print("  ", n)
+
+
     assert not missing, f"Trainable params missing from optimizer: {len(missing)}"
     assert not extra, f"Frozen params included in optimizer: {len(extra)}"
 
