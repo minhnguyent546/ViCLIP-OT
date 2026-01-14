@@ -247,7 +247,7 @@ def train_model(args: argparse.Namespace) -> None:
                 nn.InstanceNorm3d,
                 nn.Embedding,
             ],
-            forbidden_layer_names=["bias", "norm", "logit_scale"],
+            forbidden_layer_names=["bias", "norm", "logit_scale", "logit_bias"],
         )
     )
 
@@ -259,6 +259,8 @@ def train_model(args: argparse.Namespace) -> None:
         "text_encoder.dense.",
         "text_encoder.fc.",
         "image_encoder.head.",
+        "logit_scale",
+        "logit_bias",
     )
 
     def has_prefix(name: str, prefixes: tuple[str, ...]) -> bool:
