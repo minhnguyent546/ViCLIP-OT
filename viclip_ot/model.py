@@ -36,6 +36,8 @@ class ViCLIPOTTextConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_name: str
+    proj: Literal["linear", "none"] = "none"  # 'none' means no projection layer
+    proj_bias: bool = False
 
 
 class ViCLIPOTConfig(BaseModel):
@@ -185,15 +187,25 @@ class TextEncoder(nn.Module):
         )
 
         # TODO: works for Gemma3, make more general
-        intern_embed_dim = self.encoder.config.hidden_size
-        assert intern_embed_dim is not None, "Failed to get sentence embedding dimension."
-        self.fc = nn.Linear(intern_embed_dim, embed_dim)
+        intermediate_embed_dim = self.encoder.config.hidden_size
+        assert intermediate_embed_dim is not None, "Failed to get sentence embedding dimension."
 
-        # Initialize the projection layer with Xavier/Glorot initialization
-        # to help with gradient flow in contrastive learning
-        nn.init.xavier_uniform_(self.fc.weight)
-        if self.fc.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
-            nn.init.zeros_(self.fc.bias)
+        if self.config.proj == "linear":
+            self.fc = nn.Linear(intermediate_embed_dim, embed_dim, bias=self.config.proj_bias)
+
+            # Initialize the projection layer with Xavier/Glorot initialization
+            # to help with gradient flow in contrastive learning
+            nn.init.xavier_uniform_(self.fc.weight)
+            if self.fc.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
+                nn.init.zeros_(self.fc.bias)
+        elif self.config.proj == "none":
+            if intermediate_embed_dim != embed_dim:
+                raise ValueError(
+                    f"intermediate_embed_dim {intermediate_embed_dim} != embed_dim {embed_dim} but `proj` is configured to `none`. Consider setting `proj` to `linear`."
+                )
+            self.fc = nn.Identity()
+        else:
+            raise ValueError(f"Unsupported proj type: {self.config.proj}")
 
     @classmethod
     def list_models(cls) -> list[str]:
