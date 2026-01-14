@@ -22,6 +22,7 @@ from viclip_ot.utils.logger import init_logger, logger
 from viclip_ot.utils.metric import AverageMeter
 from viclip_ot.utils.training import (
     EarlyStopping,
+    EvalResults,
     eval_model,
     get_parameter_names,
     maybe_log_eval_results,
@@ -199,7 +200,10 @@ def train_model(args: argparse.Namespace) -> None:
         wandb_run = wandb.init(
             project=args.wandb_project,
             name=args.wandb_name,
-            config=vars(args),
+            config={
+                "training_args": vars(args),
+                "model_config": model_config.model_dump(),
+            },
             tags=args.wandb_tags,
             notes=args.wandb_notes,
             id=args.wandb_resume_id,
@@ -317,8 +321,12 @@ def train_model(args: argparse.Namespace) -> None:
         logger.info(f"Using gradient clipping with max norm {args.max_grad_norm}")
 
     # results for each metric will be sorted in decreasing order
-    if args.best_checkpoint_metrics is None:
-        args.best_checkpoint_metrics = []
+    # metric with prefix '_' indicates lower is better (e.g. _loss)
+    eval_results_keys = list(EvalResults.__annotations__.keys())
+    for metric in args.best_checkpoint_metrics:
+        assert metric.lstrip("_") in eval_results_keys, (
+            f"Metric {metric} is not a valid metric, possible metrics: {eval_results_keys}"
+        )
 
     # best_val_results[metric] = list of tuples (value, checkpoint_path)
     best_val_results: dict[str, list[tuple[float, str]]] = {

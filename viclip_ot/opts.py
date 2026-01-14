@@ -259,8 +259,21 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         "--best_checkpoint_metrics",
         type=str,
         nargs="*",
-        choices=["accuracy", "precision", "recall", "f1", "loss"],
-        help="Metric to use for saving the best checkpoint (based on validation results)",
+        choices=[
+            "_loss",
+            "_i2t_mean_rank",
+            "_i2t_median_rank",
+            "i2t_R__1",
+            "i2t_R__5",
+            "i2t_R__10",
+            "_t2i_mean_rank",
+            "_t2i_median_rank",
+            "t2i_R__1",
+            "t2i_R__5",
+            "t2i_R__10",
+        ],
+        help="Metric to use for saving the best checkpoint (based on validation results). Prefix with '_' to indicate decreasing order (e.g. _loss).",
+        default=["_loss"],
     )
     group.add_argument(
         "--save_best_k",

@@ -400,8 +400,9 @@ def save_top_k_checkpoints(
     """
     for metric in criterion_metrics:
         current_metric_value = val_results[metric]
-        if metric == "loss":
-            # For loss, we want to save the lowest value, so we negate it
+        if metric.startswith("_"):
+            # for metric with prefix '_', we want to save the lowest value
+            metric = metric[1:]
             current_metric_value = -current_metric_value
 
         current_checkpoint_path = checkpoint_path_template.format(
@@ -422,7 +423,7 @@ def save_top_k_checkpoints(
                 current_checkpoint_path,
             )
             logger.info(
-                f"Saved checkpoint for {metric}: {abs(current_metric_value):.4f} to {current_checkpoint_path}"
+                f"Saved checkpoint for {metric}: {abs(current_metric_value):.6f} to {current_checkpoint_path}"
             )
         else:
             # If we already have args.save_best_k checkpoints, check if the current one is better than the worst of them.
@@ -451,8 +452,8 @@ def save_top_k_checkpoints(
                     current_checkpoint_path,
                 )
                 logger.info(
-                    f"Replaced checkpoint for {metric}: {abs(current_metric_value):.4f} "
-                    f"(old worst: {abs(worst_of_k_value):.4f}) to {current_checkpoint_path}",
+                    f"Replaced checkpoint for {metric}: {abs(current_metric_value):.6f} "
+                    f"(old worst: {abs(worst_of_k_value):.6f}) to {current_checkpoint_path}",
                 )
 
 
