@@ -1,5 +1,6 @@
 image_config:
-  model_name: timm/convnext_base.fb_in22k_ft_in1k
+  # model_name: timm/convnext_base.fb_in22k_ft_in1k
+  model_name: timm/convnextv2_base.fcmae_ft_in22k_in1k
   pretrained: true
   pool: avg
   proj: linear # low-resource
