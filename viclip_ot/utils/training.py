@@ -575,13 +575,13 @@ def freeze_batch_norm_2d(module, module_match=None, name=""):
         module, (nn.modules.batchnorm.BatchNorm2d, nn.modules.batchnorm.SyncBatchNorm)
     ):
         res = FrozenBatchNorm2d(module.num_features)
-        res.num_features = module.num_features
-        res.affine = module.affine
+        res.num_features = module.num_features  # pyright: ignore
+        res.affine = module.affine  # pyright: ignore
         if module.affine:
             res.weight.data = module.weight.data.clone().detach()
             res.bias.data = module.bias.data.clone().detach()
-        res.running_mean.data = module.running_mean.data
-        res.running_var.data = module.running_var.data
+        res.running_mean.data = module.running_mean.data  # pyright: ignore
+        res.running_var.data = module.running_var.data  # pyright: ignore
         res.eps = module.eps
     else:
         for child_name, child in module.named_children():

@@ -80,13 +80,12 @@ class ImageEncoder(nn.Module):
         feat_size = trunk_default_config["pool_size"]
         if is_custom_pool:
             # if attn pooling used, remove both classifier and default pool
-            # pyright: ignore[reportCallIssue]
-            self.trunk.reset_classifier(num_classes=0, global_pool="")
+            self.trunk.reset_classifier(num_classes=0, global_pool="")  # pyright: ignore[reportCallIssue]
+
         else:
             # reset global pool if pool config set, otherwise leave as network default
             reset_kwargs = {"global_pool": self.config.pool} if self.config.pool else {}
-            # pyright: ignore[reportCallIssue]
-            self.trunk.reset_classifier(0, **reset_kwargs)
+            self.trunk.reset_classifier(0, **reset_kwargs)  # pyright: ignore[reportCallIssue]
 
         prev_chs: int = self.trunk.num_features
 
@@ -110,8 +109,7 @@ class ImageEncoder(nn.Module):
             )
             # Initialize with Xavier/Glorot for better gradient flow in contrastive learning
             nn.init.xavier_uniform_(proj_layer.weight)
-            # pyright: ignore[reportUnnecessaryComparison]
-            if proj_layer.bias is not None:
+            if proj_layer.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
                 nn.init.zeros_(proj_layer.bias)
             head_layers["proj"] = proj_layer
         elif self.config.proj == "mlp":
@@ -140,8 +138,8 @@ class ImageEncoder(nn.Module):
                 freeze_batch_norm_2d(self.trunk)
         else:
             # NOTE: partial freeze requires latest timm (master) branch and is subject to change
-            # pyright: ignore[reportCallIssue]
-            matcher = self.trunk.group_matcher()
+            matcher = self.trunk.group_matcher()  # pyright: ignore[reportCallIssue]
+
             gparams = group_parameters(self.trunk, matcher)
             max_layer_id = max(gparams.keys())
             max_layer_id = max_layer_id - last_unfreeze_groups
@@ -203,8 +201,7 @@ class TextEncoder(nn.Module):
             # Initialize the projection layer with Xavier/Glorot initialization
             # to help with gradient flow in contrastive learning
             nn.init.xavier_uniform_(self.fc.weight)
-            # pyright: ignore[reportUnnecessaryComparison]
-            if self.fc.bias is not None:
+            if self.fc.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
                 nn.init.zeros_(self.fc.bias)
         elif self.config.proj == "none":
             if intermediate_embed_dim != embed_dim:
@@ -242,10 +239,9 @@ class TextEncoder(nn.Module):
         logger.info(f"[TextEncoder - embeddinggemma-300m] Has Normalize: {norm_exists}")
 
         dense_layers = [self._load_dense(ds) for ds in sorted(dense_subs)]
-        # pyright: ignore[reportIndexIssue]
-        if dense_layers and dense_layers[-1][-1] == nn.Identity():
-            # pyright: ignore[reportIndexIssue]
-            dense_layers[-1][-1] = nn.GELU()
+        if dense_layers and dense_layers[-1][-1] == nn.Identity():  # pyright: ignore[reportIndexIssue]
+            dense_layers[-1][-1] = nn.GELU()  # pyright: ignore[reportIndexIssue]
+
         self.dense = nn.Sequential(*dense_layers)
 
     def _load_dense(self, subfolder: str) -> nn.Module:
