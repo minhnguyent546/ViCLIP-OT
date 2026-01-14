@@ -270,7 +270,7 @@ def train_model(args: argparse.Namespace) -> None:
             "params": [
                 param
                 for backbone_module in backbone_modules
-                for name, param in backbone_module.parameters()
+                for name, param in backbone_module.named_parameters()
                 if name in decay_parameters
             ],
             "weight_decay": args.weight_decay,
@@ -281,7 +281,7 @@ def train_model(args: argparse.Namespace) -> None:
             "params": [
                 param
                 for backbone_module in backbone_modules
-                for name, param in backbone_module.parameters()
+                for name, param in backbone_module.named_parameters()
                 if name not in decay_parameters
             ],
             "weight_decay": 0.0,
@@ -292,7 +292,7 @@ def train_model(args: argparse.Namespace) -> None:
             "params": [
                 param
                 for adapters_module in adapters_modules
-                for name, param in adapters_module.parameters()
+                for name, param in adapters_module.named_parameters()
                 if name in decay_parameters
             ],
             "weight_decay": args.weight_decay,
@@ -303,7 +303,7 @@ def train_model(args: argparse.Namespace) -> None:
             "params": [
                 param
                 for adapters_module in adapters_modules
-                for name, param in adapters_module.parameters()
+                for name, param in adapters_module.named_parameters()
                 if name not in decay_parameters
             ],
             "weight_decay": 0.0,
