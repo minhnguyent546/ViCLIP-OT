@@ -56,8 +56,7 @@ class ImageEncoder(nn.Module):
         "timm/convnext_base.dinov3_lvd1689m",
         "timm/convnext_small.dinov3_lvd1689m",
 
-        # DINOv2 Vision Transformers
-        "timm/vit_base_patch14_reg4_dinov2.lvd142m",
+        "timm/convnext_base.fb_in22k_ft_in1k",
     ]
 
     def __init__(

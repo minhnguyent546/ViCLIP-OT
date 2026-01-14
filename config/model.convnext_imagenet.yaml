@@ -1,7 +1,5 @@
-#### 2026-01-14_09-22-39-cliploss_dinov3_gemma300m_openviic_final_30
-
 image_config:
-  model_name: timm/vit_base_patch16_224.dino
+  model_name: timm/convnext_base.fb_in22k_ft_in1k
   pretrained: true
   pool: avg
   proj: linear # low-resource
