@@ -399,11 +399,12 @@ def save_top_k_checkpoints(
         - Only saves checkpoints that are among the top-k performing for their respective metrics
     """
     for metric in criterion_metrics:
-        current_metric_value = val_results[metric]
         if metric.startswith("_"):
             # for metric with prefix '_', we want to save the lowest value
             metric = metric[1:]
-            current_metric_value = -current_metric_value
+            current_metric_value = -val_results[metric]
+        else:
+            current_metric_value = val_results[metric]
 
         current_checkpoint_path = checkpoint_path_template.format(
             metric=metric, metric_value=abs(current_metric_value)
