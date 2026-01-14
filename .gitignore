@@ -28,3 +28,6 @@ _*
 /wandb
 *.bak
 *.backup
+
+# shell scripts
+s.sh
