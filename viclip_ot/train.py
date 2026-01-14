@@ -3,7 +3,6 @@ import os
 import time
 from datetime import datetime
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.transforms.v2 as v2
@@ -242,83 +241,82 @@ def train_model(args: argparse.Namespace) -> None:
 
     assert checkpoint_dir is not None
 
-    # separate parameters for weight decay
-    decay_parameters = get_parameter_names(
-        model,
-        forbidden_layer_types=[
-            nn.LayerNorm,
-            nn.BatchNorm1d,
-            nn.BatchNorm2d,
-            nn.BatchNorm3d,
-            nn.GroupNorm,
-            nn.InstanceNorm1d,
-            nn.InstanceNorm2d,
-            nn.InstanceNorm3d,
-            nn.Embedding,
-        ],
-        forbidden_layer_names=[
-            "bias",
-            "norm",
-        ],
+    decay_parameters = set(
+        get_parameter_names(
+            model,
+            forbidden_layer_types=[
+                nn.LayerNorm,
+                nn.BatchNorm1d,
+                nn.BatchNorm2d,
+                nn.BatchNorm3d,
+                nn.GroupNorm,
+                nn.InstanceNorm1d,
+                nn.InstanceNorm2d,
+                nn.InstanceNorm3d,
+                nn.Embedding,
+            ],
+            forbidden_layer_names=["bias", "norm"],
+        )
     )
-    logger.debug(
-        f"No decay params: {[name for name, _param in model.named_parameters() if name not in decay_parameters]}"
+
+    backbone_prefixes = (
+        "text_encoder.encoder.",
+        "image_encoder.trunk.",
     )
-    backbone_modules = [
-        model.text_encoder.encoder,
-        model.image_encoder.trunk,
-    ]
-    adapters_modules = [
-        model.text_encoder.dense,
-        model.text_encoder.fc,
-        model.image_encoder.head,
-    ]
+    adapters_prefixes = (
+        "text_encoder.dense.",
+        "text_encoder.fc.",
+        "image_encoder.head.",
+    )
+
+    def has_prefix(name: str, prefixes: tuple[str, ...]) -> bool:
+        return any(name.startswith(p) for p in prefixes)
+
+    def collect(prefixes, do_decay: bool):
+        return [
+            p for n, p in model.named_parameters()
+            if p.requires_grad
+            and has_prefix(n, prefixes)
+            and ((n in decay_parameters) == do_decay)
+        ]
+
     param_groups = [
         {
-            "params": [
-                param
-                for backbone_module in backbone_modules
-                for name, param in backbone_module.named_parameters()
-                if name in decay_parameters
-            ],
+            "params": collect(backbone_prefixes, do_decay=True),
             "weight_decay": args.weight_decay,
             "lr": args.backbone_lr,
             "name": "decay__backbone",
         },
         {
-            "params": [
-                param
-                for backbone_module in backbone_modules
-                for name, param in backbone_module.named_parameters()
-                if name not in decay_parameters
-            ],
+            "params": collect(backbone_prefixes, do_decay=False),
             "weight_decay": 0.0,
             "lr": args.backbone_lr,
             "name": "no_decay__backbone",
         },
         {
-            "params": [
-                param
-                for adapters_module in adapters_modules
-                for name, param in adapters_module.named_parameters()
-                if name in decay_parameters
-            ],
+            "params": collect(adapters_prefixes, do_decay=True),
             "weight_decay": args.weight_decay,
             "lr": args.lr,
             "name": "decay__adapters",
         },
         {
-            "params": [
-                param
-                for adapters_module in adapters_modules
-                for name, param in adapters_module.named_parameters()
-                if name not in decay_parameters
-            ],
+            "params": collect(adapters_prefixes, do_decay=False),
             "weight_decay": 0.0,
             "lr": args.lr,
             "name": "no_decay__adapters",
         },
     ]
+
+    # --- sanity checks (catch silent bugs) ---
+    all_trainable = {id(p) for p in model.parameters() if p.requires_grad}
+    grouped = {id(p) for g in param_groups for p in g["params"]} # pyright: ignore[reportGeneralTypeIssues]
+
+    missing = all_trainable - grouped
+    extra = grouped - all_trainable
+
+    assert not missing, f"Trainable params missing from optimizer: {len(missing)}"
+    assert not extra, f"Frozen params included in optimizer: {len(extra)}"
+
     optimizer = AdamW(param_groups)
 
     num_updates_per_epoch = (
