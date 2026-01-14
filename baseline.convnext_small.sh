@@ -4,7 +4,7 @@
 
 uv run python -m viclip_ot.train \
   --seed 42 \
-  --model_config ./config/baseline.yaml \
+  --model_config ./config/baseline.convnext_small.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
   --train_batch_size 16 \
   --eval_batch_size 32 \
