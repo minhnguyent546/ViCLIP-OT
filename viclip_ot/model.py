@@ -60,6 +60,7 @@ class ImageEncoder(nn.Module):
         "timm/convnextv2_base.fcmae_ft_in22k_in1k",
 
         "timm/vit_base_patch16_dinov3.lvd1689m",
+        "timm/vit_base_patch16_224.augreg2_in21k_ft_in1k",
     ]
 
     def __init__(
