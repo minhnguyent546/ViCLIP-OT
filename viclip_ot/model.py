@@ -55,6 +55,9 @@ class ImageEncoder(nn.Module):
     _SUPPORTED_MODELS = [
         "timm/convnext_base.dinov3_lvd1689m",
         "timm/convnext_small.dinov3_lvd1689m",
+
+        # DINOv2 Vision Transformers
+        "timm/vit_base_patch14_reg4_dinov2.lvd142m",
     ]
 
     def __init__(
