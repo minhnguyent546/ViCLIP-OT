@@ -2,7 +2,7 @@
 
 uv run python -m viclip_ot.train \
   --seed 42 \
-  --model_config ./config/model.convnext_base_dinov3_bge_m3.yaml \
+  --model_config ./config/model.vit_base_dinov3_bge_m3.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
   --train_batch_size 8 \
   --eval_batch_size 32 \
@@ -29,4 +29,4 @@ uv run python -m viclip_ot.train \
   --max_grad_norm 1.0 \
   --wandb_logging \
   --wandb_project viclip_ot_test \
-  --wandb_name cliploss_convnext_base_dinov3_bge_m3_openviic_final_30
+  --wandb_name cliploss_vit_base_dinov3_bge_m3_openviic_final_30
