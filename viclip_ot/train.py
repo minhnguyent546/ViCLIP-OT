@@ -80,7 +80,7 @@ def train_model(args: argparse.Namespace) -> None:
 
     if args.from_checkpoint is not None:
         logger.info(f"Loading model from checkpoint: {args.from_checkpoint}")
-        checkpoint = torch.load(args.from_checkpoint, map_location=device)
+        checkpoint = torch.load(args.from_checkpoint, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"], strict=True)
 
     if args.lock_image:
