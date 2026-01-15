@@ -354,29 +354,37 @@ class EntropicOTLoss(nn.Module):
         """
         Compute entropic optimal transport plan (Sinkhorn algorithm).
 
-        cost: cost matrix where a lower cost means a better image–text match.
-        Returns a transport plan P approx. satisfying uniform marginals.
+        Args:
+            cost: (n, m) cost matrix (lower cost = better match).
+        Returns:
+            P: (n, m) transport plan approximately satisfying uniform marginals.
         """
         if reg is None:
             reg = self.reg
         if n_iters is None:
             n_iters = self.n_iters
 
+        # Do Sinkhorn in float32 for stability (even if model is fp16/bf16)
+        orig_dtype = cost.dtype
+        cost = cost.float()
+
         device = cost.device
-        dtype = cost.dtype
         n, m = cost.shape
 
-        # uniform marginals of size n and m
-        a = torch.full((n,), 1.0 / n, device=device, dtype=dtype)
-        b = torch.full((m,), 1.0 / m, device=device, dtype=dtype)
+        # Uniform marginals
+        a = torch.full((n,), 1.0 / n, device=device, dtype=cost.dtype)
+        b = torch.full((m,), 1.0 / m, device=device, dtype=cost.dtype)
 
-        # Gibbs kernel: note that very large cost entries can underflow
+        # Stabilize before exp:
+        # shift by row-wise minimum
+        cost = cost - cost.min(dim=1, keepdim=True).values
+
+        # Gibbs kernel
         K = torch.exp(-cost / reg)
 
-        u = torch.ones((n,), device=device, dtype=dtype)
-        v = torch.ones((m,), device=device, dtype=dtype)
+        u = torch.ones((n,), device=device, dtype=cost.dtype)
+        v = torch.ones((m,), device=device, dtype=cost.dtype)
 
-        # Sinkhorn iterations: scale rows and columns to match marginals
         for _ in range(n_iters):
             Kv = K @ v
             u = a / (Kv + self.eps)
@@ -384,9 +392,13 @@ class EntropicOTLoss(nn.Module):
             KTu = K.T @ u
             v = b / (KTu + self.eps)
 
-        # final transport plan
         P = (u.unsqueeze(1) * K) * v.unsqueeze(0)
-        return P
+
+        # Optional: renormalize rows to sum to 1
+        # P = P / (P.sum(dim=1, keepdim=True) + self.eps)
+
+        return P.to(orig_dtype)
+
 
     def forward(
         self,
@@ -421,8 +433,8 @@ class EntropicOTLoss(nn.Module):
         cost_t2i = -logits_t2i
 
         # compute transport plans
-        P_i2t = self.entropic_ot(cost_i2t)
-        P_t2i = self.entropic_ot(cost_t2i)
+        P_i2t = self.entropic_ot(cost_i2t, reg=self.reg, n_iters=self.n_iters)
+        P_t2i = self.entropic_ot(cost_t2i, reg=self.reg, n_iters=self.n_iters)
 
         # convert transport plans to logits via log (Softmax(log P) ≈ P)
         ot_logits_i2t = torch.log(P_i2t + self.eps)
@@ -433,8 +445,8 @@ class EntropicOTLoss(nn.Module):
             labels = torch.arange(
                 ot_logits_i2t.size(0), device=device, dtype=torch.long
             )
-            loss_i2t = F.cross_entropy(ot_logits_i2t, labels, reduction=reduction)
-            loss_t2i = F.cross_entropy(ot_logits_t2i, labels, reduction=reduction)
+            loss_i2t = Fun.cross_entropy(ot_logits_i2t, labels, reduction=reduction)
+            loss_t2i = Fun.cross_entropy(ot_logits_t2i, labels, reduction=reduction)
         else:
             # multi-caption soft labels: rows match same image_ids
             image_ids = image_ids.to(device)
@@ -445,8 +457,8 @@ class EntropicOTLoss(nn.Module):
             )
 
             # compute cross entropy with soft targets
-            logp_i2t = F.log_softmax(ot_logits_i2t, dim=1)
-            logp_t2i = F.log_softmax(ot_logits_t2i, dim=1)
+            logp_i2t = Fun.log_softmax(ot_logits_i2t, dim=1)
+            logp_t2i = Fun.log_softmax(ot_logits_t2i, dim=1)
 
             loss_i2t = -(soft_labels * logp_i2t).sum(dim=1)
             loss_t2i = -(soft_labels * logp_t2i).sum(dim=1)

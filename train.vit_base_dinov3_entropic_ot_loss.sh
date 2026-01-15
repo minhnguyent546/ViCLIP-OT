@@ -3,7 +3,7 @@
 uv run python -m viclip_ot.train \
   --criterion entropic_ot_loss \
   --ot_reg 0.05 \
-  --ot_iters 50 \
+  --ot_iters 20 \
   --seed 42 \
   --model_config ./config/model.vit_base_dinov3.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
