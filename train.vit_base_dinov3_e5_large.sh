@@ -2,7 +2,7 @@
 
 uv run python -m viclip_ot.train \
   --seed 42 \
-  --model_config ./config/model.vit_base_dinov3_bge_m3.yaml \
+  --model_config ./config/model.vit_base_dinov3_e5_large.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
   --train_batch_size 8 \
   --eval_batch_size 32 \
