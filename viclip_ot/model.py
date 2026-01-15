@@ -191,8 +191,14 @@ class TextEncoder(nn.Module):
             )
 
         self.encoder = AutoModel.from_pretrained(self.config.model_name, trust_remote_code=True)
+
+        tokenizer_args: dict[str, Any] = {}
+        if self.config.model_name == "qwen/qwen3-embedding-0.6b":
+            tokenizer_args["padding_side"] = "left"
+
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.config.model_name, trust_remote_code=True
+            self.config.model_name, trust_remote_code=True,
+            **tokenizer_args
         )
 
         if self.config.model_name == "google/embeddinggemma-300m":
