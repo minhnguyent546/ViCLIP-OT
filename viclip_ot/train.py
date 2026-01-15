@@ -238,7 +238,7 @@ def train_model(args: argparse.Namespace) -> None:
         test_results = eval_model(
             model=model,
             criterion=criterion,
-            eval_data_loader=train_data_loader,
+            eval_data_loader=test_data_loader,
             device=device,
         )
         test_elapsed_time = time.perf_counter() - test_start_time
