@@ -174,9 +174,9 @@ class ImageEncoder(nn.Module):
 
 class TextEncoder(nn.Module):
     _SUPPORTED_MODELS = [
-        "google/embeddinggemma-300m"
+        "google/embeddinggemma-300m",
 
-        "BAAI/bge-m3",
+        "baai/bge-m3",
     ]
 
     def __init__(
@@ -199,7 +199,7 @@ class TextEncoder(nn.Module):
 
         if self.config.model_name == "google/embeddinggemma-300m":
             self._add_dense_for_embeddinggemma_300m()
-        elif self.config.model_name == "BAAI/bge-m3":
+        elif self.config.model_name == "baai/bge-m3":
             self.dense = nn.Identity() # no extra layers needed
         else:
             raise NotImplementedError(
@@ -316,7 +316,7 @@ class TextEncoder(nn.Module):
         # get Last Hidden State (batch_size, seq_len, hidden_dim)
         last_hidden_state = outputs.last_hidden_state
 
-        if self.config.model_name == "BAAI/bge-m3":
+        if self.config.model_name == "baai/bge-m3":
             # use CLS token
             last_hidden_state = last_hidden_state[:, 0, :]
 
@@ -324,6 +324,10 @@ class TextEncoder(nn.Module):
                 last_hidden_state = Fun.normalize(last_hidden_state, p=2, dim=1)
 
             return last_hidden_state
+
+        assert (
+            self.config.model_name == "google/embeddinggemma-300m"
+        ), "get_embeddings currently only supports 'google/embeddinggemma-300m' and 'baai/bge-m3' models."
 
         # We must mask out padding tokens so they don't affect the average
         attention_mask = inputs["attention_mask"]

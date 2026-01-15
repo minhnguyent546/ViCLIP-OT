@@ -13,7 +13,7 @@ uv run python -m viclip_ot.train \
   --num_epochs 30 \
   --num_workers 8 \
   --log_file_interval 3 \
-  --mixed_precision bf16 \
+  --mixed_precision fp16 \
   --gradient_accum_steps 16 \
   --lr 2e-4 \
   --backbone_lr 5e-5 \
@@ -29,4 +29,4 @@ uv run python -m viclip_ot.train \
   --max_grad_norm 1.0 \
   --wandb_logging \
   --wandb_project viclip_ot_test \
-  --wandb_name cliploss_dinov3_bge_m3_openviic_final_30
+  --wandb_name cliploss_vit_base_dinov3_bge_m3_openviic_final_30
