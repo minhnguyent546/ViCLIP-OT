@@ -2,6 +2,7 @@ import argparse
 import os
 import time
 from datetime import datetime
+from typing import Literal
 
 import torch
 import torch.nn as nn
@@ -114,20 +115,39 @@ def train_model(args: argparse.Namespace) -> None:
             ),
         ]
     )
+
+    def model_fmt() -> Literal["gemma", "e5", "qwen3", "bge"]:
+        model_name = model_config.text_config.model_name
+        if "gemma" in model_name.lower():
+            return "gemma"
+        elif "e5" in model_name.lower():
+            return "e5"
+        elif "qwen" in model_name.lower():
+            return "qwen3"
+        elif "bge" in model_name.lower():
+            return "bge"
+        else:
+            raise ValueError(f"Unsupported model name for determining model format: {model_name}")
+
+    logger.info(f"Determined model format: {model_fmt()}")
+
     train_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
         metadata_json_file="train.json",
         image_transforms=train_transforms,
+        model_fmt=model_fmt(),
     )
     test_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
         metadata_json_file="test.json",
         image_transforms=eval_transforms,
+        model_fmt=model_fmt(),
     )
     val_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
         metadata_json_file="val.json",
         image_transforms=eval_transforms,
+        model_fmt=model_fmt(),
     )
 
     logger.info(
