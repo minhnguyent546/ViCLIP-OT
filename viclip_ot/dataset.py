@@ -152,7 +152,7 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int]]):
             )
 
         # Print first caption for debugging
-        logger.debug(f"Image ID {image_id} first caption: {formatted_captions[0]}")
+        # logger.debug(f"Image ID {image_id} first caption: {formatted_captions[0]}")
 
         return image, formatted_captions, int(image_id)
 
