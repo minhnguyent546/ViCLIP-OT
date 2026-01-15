@@ -395,7 +395,7 @@ class EntropicOTLoss(nn.Module):
         P = (u.unsqueeze(1) * K) * v.unsqueeze(0)
 
         # Optional: renormalize rows to sum to 1
-        # P = P / (P.sum(dim=1, keepdim=True) + self.eps)
+        P = P / (P.sum(dim=1, keepdim=True) + self.eps)
 
         return P.to(orig_dtype)
 
