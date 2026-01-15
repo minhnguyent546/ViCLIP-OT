@@ -112,9 +112,6 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default="clip_loss",
     )
 
-    # group.add_argument("--ot_reg", type=float, default=0.05)
-    # group.add_argument("--ot_iters", type=int, default=20)
-
     group.add_argument(
         "--num_epochs",
         type=int,
