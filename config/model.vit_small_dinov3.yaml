@@ -1,5 +1,5 @@
 image_config:
-  model_name: timm/convnext_small.dinov3_lvd1689m
+  model_name: timm/vit_small_patch16_dinov3.lvd1689m
   pretrained: true
   pool: avg
   proj: linear # low-resource

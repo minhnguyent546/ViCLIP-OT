@@ -2,7 +2,7 @@
 
 uv run python -m viclip_ot.train \
   --seed 42 \
-  --model_config ./config/model.convnext_small_dinov3.yaml \
+  --model_config ./config/model.vit_small_dinov3.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
   --train_batch_size 16 \
   --eval_batch_size 32 \
@@ -24,9 +24,9 @@ uv run python -m viclip_ot.train \
   --min_lr 1e-6 \
   --lr_warmup_epochs 2 \
   --lr_warmup_method linear \
-  --best_checkpoint_metrics t2i_R__1 \
+  --best_checkpoint_metrics t2i_R__1 i2t_R__1 \
   --save_best_k 5 \
   --max_grad_norm 1.0 \
   --wandb_logging \
   --wandb_project viclip_ot_test \
-  --wandb_name cliploss_dinov3_small_gemma300m_openviic_final_30
+  --wandb_name cliploss_vit_small_dinov3_gemma300m_openviic_final_30
