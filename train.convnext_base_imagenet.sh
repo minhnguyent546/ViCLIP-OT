@@ -2,7 +2,7 @@
 
 uv run python -m viclip_ot.train \
   --seed 42 \
-  --model_config ./config/model.convnext_imagenet.yaml \
+  --model_config ./config/model.convnext_base_imagenet.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
   --train_batch_size 16 \
   --eval_batch_size 32 \
