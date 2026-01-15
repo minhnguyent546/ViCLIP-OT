@@ -299,3 +299,165 @@ class SigLipLoss(nn.Module):
         )
 
         return {"loss": loss} if output_dict else loss
+
+
+class EntropicOTLoss(nn.Module):
+    """
+    Drop-in replacement for ClipLoss that uses entropic optimal transport.
+    This implementation is adapted from the OT-CLIP loss modules provided
+    in https://github.com/fan23j/ICML2024-OT-CLIP (training/loss.py).:contentReference[oaicite:1]{index=1}
+
+    Args:
+        reg: Entropic regularization coefficient (larger → smoother plan).
+        n_iters: Number of Sinkhorn iterations.
+        eps: Small epsilon for numerical stability.
+
+    Forward receives:
+    - image_features, text_features
+    - logit_scale, (optional) logit_bias
+    - image_ids (for multi-caption soft labels)
+    - output_dict flag to return dict with "loss"
+    """
+
+    def __init__(self, reg: float = 0.05, n_iters: int = 20, eps: float = 1e-8):
+        super().__init__()
+        self.reg = reg
+        self.n_iters = n_iters
+        self.eps = eps
+
+    def get_logits(self, image_features, text_features, logit_scale, logit_bias=None):
+        """
+        Compute CLIP-style logits by cosine-like similarity:
+        - Use float32 matmul for better numerical stability
+        - Scale by logit_scale
+        - Optionally add logit_bias (if using adaptive bias)
+        """
+        original_dtype = image_features.dtype
+
+        # compute similarity in float (stabilizes backward)
+        logits_per_image = logit_scale * (
+            image_features.float() @ text_features.float().T
+        )
+        logits_per_text = logits_per_image.T
+
+        if logit_bias is not None:
+            logits_per_image = logits_per_image + logit_bias
+            logits_per_text = logits_per_text + logit_bias
+
+        # convert back to original dtype
+        return (
+            logits_per_image.to(original_dtype),
+            logits_per_text.to(original_dtype),
+        )
+
+    def entropic_ot(self, cost, reg=None, n_iters=None):
+        """
+        Compute entropic optimal transport plan (Sinkhorn algorithm).
+
+        cost: cost matrix where a lower cost means a better image–text match.
+        Returns a transport plan P approx. satisfying uniform marginals.
+        """
+        if reg is None:
+            reg = self.reg
+        if n_iters is None:
+            n_iters = self.n_iters
+
+        device = cost.device
+        dtype = cost.dtype
+        n, m = cost.shape
+
+        # uniform marginals of size n and m
+        a = torch.full((n,), 1.0 / n, device=device, dtype=dtype)
+        b = torch.full((m,), 1.0 / m, device=device, dtype=dtype)
+
+        # Gibbs kernel: note that very large cost entries can underflow
+        K = torch.exp(-cost / reg)
+
+        u = torch.ones((n,), device=device, dtype=dtype)
+        v = torch.ones((m,), device=device, dtype=dtype)
+
+        # Sinkhorn iterations: scale rows and columns to match marginals
+        for _ in range(n_iters):
+            Kv = K @ v
+            u = a / (Kv + self.eps)
+
+            KTu = K.T @ u
+            v = b / (KTu + self.eps)
+
+        # final transport plan
+        P = (u.unsqueeze(1) * K) * v.unsqueeze(0)
+        return P
+
+    def forward(
+        self,
+        image_features,
+        text_features,
+        logit_scale,
+        logit_bias=None,
+        image_ids=None,
+        output_dict: bool = False,
+        reduction: str = "mean",
+    ):
+        """
+        Forward pass computing the OT-based loss.
+
+        If image_ids is None:
+            compute symmetric transport cross-entropy (like CLIP InfoNCE).
+        Else:
+            allow many-to-many soft label matching per the dataset IDs.
+        """
+        device = image_features.device
+
+        # compute similarity logits
+        logits_i2t, logits_t2i = self.get_logits(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            logit_bias=logit_bias,
+        )
+
+        # convert similarities to costs (lower cost = higher similarity)
+        cost_i2t = -logits_i2t
+        cost_t2i = -logits_t2i
+
+        # compute transport plans
+        P_i2t = self.entropic_ot(cost_i2t)
+        P_t2i = self.entropic_ot(cost_t2i)
+
+        # convert transport plans to logits via log (Softmax(log P) ≈ P)
+        ot_logits_i2t = torch.log(P_i2t + self.eps)
+        ot_logits_t2i = torch.log(P_t2i + self.eps)
+
+        if image_ids is None:
+            # standard symmetric cross entropy like CLIP
+            labels = torch.arange(
+                ot_logits_i2t.size(0), device=device, dtype=torch.long
+            )
+            loss_i2t = F.cross_entropy(ot_logits_i2t, labels, reduction=reduction)
+            loss_t2i = F.cross_entropy(ot_logits_t2i, labels, reduction=reduction)
+        else:
+            # multi-caption soft labels: rows match same image_ids
+            image_ids = image_ids.to(device)
+            matches = image_ids.view(-1, 1) == image_ids.view(1, -1)
+            soft_labels = matches.float()
+            soft_labels = soft_labels / (
+                soft_labels.sum(dim=1, keepdim=True) + self.eps
+            )
+
+            # compute cross entropy with soft targets
+            logp_i2t = F.log_softmax(ot_logits_i2t, dim=1)
+            logp_t2i = F.log_softmax(ot_logits_t2i, dim=1)
+
+            loss_i2t = -(soft_labels * logp_i2t).sum(dim=1)
+            loss_t2i = -(soft_labels * logp_t2i).sum(dim=1)
+
+            if reduction == "mean":
+                loss_i2t = loss_i2t.mean()
+                loss_t2i = loss_t2i.mean()
+            elif reduction == "sum":
+                loss_i2t = loss_i2t.sum()
+                loss_t2i = loss_t2i.sum()
+            # else: "none" returns per-sample
+
+        total_loss = (loss_i2t + loss_t2i) / 2.0
+        return {"loss": total_loss} if output_dict else total_loss

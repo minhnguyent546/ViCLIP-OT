@@ -108,9 +108,13 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         "--criterion",
         type=str,
         help="Which loss criterion to use",
-        choices=["clip_loss", "sig_lip_loss"],
+        choices=["clip_loss", "sig_lip_loss", "entropic_ot_loss"],
         default="clip_loss",
     )
+
+    group.add_argument("--ot_reg", type=float, default=0.05)
+    group.add_argument("--ot_iters", type=int, default=20)
+
     group.add_argument(
         "--num_epochs",
         type=int,
