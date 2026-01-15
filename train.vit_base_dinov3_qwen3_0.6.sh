@@ -4,7 +4,7 @@ uv run python -m viclip_ot.train \
   --seed 42 \
   --model_config ./config/model.vit_base_dinov3_qwen3_0.6.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
-  --train_batch_size 8 \
+  --train_batch_size 4 \
   --eval_batch_size 16 \
   --train_crop_size 224 \
   --eval_resize_size 256 \
@@ -14,7 +14,7 @@ uv run python -m viclip_ot.train \
   --num_workers 8 \
   --log_file_interval 3 \
   --mixed_precision fp16 \
-  --gradient_accum_steps 16 \
+  --gradient_accum_steps 32 \
   --lr 2e-4 \
   --backbone_lr 5e-5 \
   --lock_image \
