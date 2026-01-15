@@ -55,10 +55,8 @@ class ImageEncoder(nn.Module):
     _SUPPORTED_MODELS = [
         "timm/convnext_base.dinov3_lvd1689m",
         "timm/convnext_small.dinov3_lvd1689m",
-
         # "timm/convnext_base.fb_in22k_ft_in1k",
         "timm/convnextv2_base.fcmae_ft_in22k_in1k",
-
         "timm/vit_base_patch16_dinov3.lvd1689m",
         "timm/vit_base_patch16_224.augreg2_in21k_ft_in1k",
         "timm/vit_small_patch16_dinov3.lvd1689m",
@@ -175,9 +173,7 @@ class ImageEncoder(nn.Module):
 class TextEncoder(nn.Module):
     _SUPPORTED_MODELS = [
         "google/embeddinggemma-300m",
-
         "baai/bge-m3",
-
         "qwen/qwen3-embedding-0.6b",
     ]
 
@@ -202,9 +198,9 @@ class TextEncoder(nn.Module):
         if self.config.model_name == "google/embeddinggemma-300m":
             self._add_dense_for_embeddinggemma_300m()
         elif self.config.model_name == "baai/bge-m3":
-            self.dense = nn.Identity() # no extra layers needed
+            self.dense = nn.Identity()  # no extra layers needed
         elif self.config.model_name == "qwen/qwen3-embedding-0.6b":
-            self.dense = nn.Identity() # no extra layers needed
+            self.dense = nn.Identity()  # no extra layers needed
         else:
             raise NotImplementedError(
                 f"TextEncoder for model {self.config.model_name} is not implemented yet."
@@ -304,19 +300,21 @@ class TextEncoder(nn.Module):
 
         return nn.Sequential(lin, activation_fun)
 
-    def _last_token_pool(self, last_hidden_states: Tensor,
-                    attention_mask: Tensor) -> Tensor:
-
+    def _last_token_pool(self, last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
         if self.config.model_name != "qwen/qwen3-embedding-0.6b":
-            raise ValueError("_last_token_pool is only supported for 'qwen/qwen3-embedding-0.6b' model.")
+            raise ValueError(
+                "_last_token_pool is only supported for 'qwen/qwen3-embedding-0.6b' model."
+            )
 
-        left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
+        left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
         if left_padding:
             return last_hidden_states[:, -1]
         else:
             sequence_lengths = attention_mask.sum(dim=1) - 1
             batch_size = last_hidden_states.shape[0]
-            return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
+            return last_hidden_states[
+                torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths
+            ]
 
     def freeze(self, unfreeze_dense: bool = False) -> None:
         for param in self.encoder.parameters():
@@ -355,9 +353,9 @@ class TextEncoder(nn.Module):
 
             return last_hidden_state
 
-        assert (
-            self.config.model_name == "google/embeddinggemma-300m"
-        ), "get_embeddings currently only supports 'google/embeddinggemma-300m' and 'baai/bge-m3' models."
+        assert self.config.model_name == "google/embeddinggemma-300m", (
+            "get_embeddings currently only supports 'google/embeddinggemma-300m' and 'baai/bge-m3' models."
+        )
 
         # We must mask out padding tokens so they don't affect the average
         attention_mask = inputs["attention_mask"]

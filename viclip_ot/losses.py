@@ -301,115 +301,6 @@ class SigLipLoss(nn.Module):
         return {"loss": loss} if output_dict else loss
 
 
-class FusedGromovLoss(nn.Module):
-    def __init__(
-        self,
-        a1: float = 0.01,
-        a2: float = 0.01,
-        n_iters: int = 5,
-        reg: float = 0.05,
-        sinkhorn_iters: int = 5,
-        eps: float = 1e-8,
-        use_soft_targets: bool = True,  # True: soft CE; False: hard CE
-    ):
-        super().__init__()
-        self.a1 = a1
-        self.a2 = a2
-        self.n_iters = n_iters
-        self.reg = reg
-        self.sinkhorn_iters = sinkhorn_iters
-        self.eps = eps
-        self.use_soft_targets = use_soft_targets
-
-    @torch.no_grad()
-    def sinkhorn(self, C: Tensor, num_iters: int = 5) -> Tensor:
-        """
-        C: cost matrix [B,B]
-        return P approx doubly-stochastic
-        """
-        C = C - C.min()
-        K = torch.exp(-C / max(self.reg, self.eps)).clamp_min(self.eps)
-
-        P = K
-        for _ in range(num_iters):
-            P = P / P.sum(dim=1, keepdim=True).clamp_min(self.eps)
-            P = P / P.sum(dim=0, keepdim=True).clamp_min(self.eps)
-        return P
-
-    def fused_gromov(self, image_features: Tensor, text_features: Tensor) -> Tensor:
-        """
-        returns transport plan P [B,B]
-        """
-        X = image_features.float()
-        Y = text_features.float()
-
-        sigma_1 = X @ X.t()  # [B,B]
-        sigma_2 = Y @ Y.t()  # [B,B]
-
-        # base cost (low when similar)
-        C = 1.0 - (X @ Y.t())  # [B,B]
-
-        # init plan
-        P = Fun.softmax(-C / max(self.reg, self.eps), dim=1)
-
-        for _ in range(self.n_iters):
-            C = C - (self.a1 * (sigma_1 @ P @ sigma_2) * self.a2)
-            P = self.sinkhorn(1.0 - C, num_iters=self.sinkhorn_iters)
-
-        return P
-
-    def _build_targets(self, image_ids: Tensor | None, device, B: int) -> Tensor:
-        if image_ids is None:
-            return torch.eye(B, device=device)
-
-        ids = image_ids.to(device).view(-1)
-        matches = (ids[:, None] == ids[None, :]).float()
-        return matches / matches.sum(dim=1, keepdim=True).clamp_min(1.0)
-
-    def _soft_ce(self, logits: Tensor, targets: Tensor, reduction: str) -> Tensor:
-        """
-        Soft cross-entropy: -sum targets * log_softmax(logits)
-        logits [B,B], targets [B,B] row-normalized
-        """
-        logp = Fun.log_softmax(logits, dim=1)
-        per = -(targets * logp).sum(dim=1)
-
-        if reduction == "none":
-            return per
-        if reduction == "sum":
-            return per.sum()
-        return per.mean()
-
-    def forward(
-        self,
-        image_features: Tensor,
-        text_features: Tensor,
-        logit_scale: Tensor | None = None,
-        logit_bias: Tensor | None = None,
-        image_ids: Tensor | None = None,
-        output_dict: bool = False,
-        reduction: str = "mean",
-    ):
-        device = image_features.device
-        B = image_features.shape[0]
-
-        P = self.fused_gromov(image_features, text_features)  # [B,B]
-
-        if not self.use_soft_targets:
-            labels = torch.arange(B, device=device, dtype=torch.int64)
-            loss_i2t = Fun.cross_entropy(P, labels, reduction=reduction)
-            loss_t2i = Fun.cross_entropy(P.t(), labels, reduction=reduction)
-            loss = 0.5 * (loss_i2t + loss_t2i)
-        else:
-            T_i2t = self._build_targets(image_ids, device, B)  # [B,B]
-            T_t2i = T_i2t.t()
-
-            loss_i2t = self._soft_ce(P, T_i2t, reduction=reduction)
-            loss_t2i = self._soft_ce(P.t(), T_t2i, reduction=reduction)
-            loss = 0.5 * (loss_i2t + loss_t2i)
-
-        return {"loss": loss} if output_dict else loss
-
 class HybridClipTPLoss(nn.Module):
     """
     Hybrid loss
@@ -417,7 +308,6 @@ class HybridClipTPLoss(nn.Module):
 
     def __init__(self):
         super().__init__()
-
 
     def forward(
         self,

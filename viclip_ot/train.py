@@ -324,7 +324,6 @@ def train_model(args: argparse.Namespace) -> None:
             if not p.requires_grad and id(p) in extra:
                 print("  ", n)
 
-
     assert not missing, f"Trainable params missing from optimizer: {len(missing)}"
     assert not extra, f"Frozen params included in optimizer: {len(extra)}"
 
@@ -405,7 +404,8 @@ def train_model(args: argparse.Namespace) -> None:
     elif args.criterion == "sig_lip_loss":
         criterion = losses.SigLipLoss()
     elif args.criterion == "entropic_ot_loss":
-        criterion = losses.FusedGromovLoss()
+        criterion = losses.HybridClipTPLoss()
+        raise NotImplementedError("Entropic OT loss is not implemented yet.")
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
 
