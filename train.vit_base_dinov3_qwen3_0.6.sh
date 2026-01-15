@@ -5,7 +5,7 @@ uv run python -m viclip_ot.train \
   --model_config ./config/model.vit_base_dinov3_qwen3_0.6.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
   --train_batch_size 8 \
-  --eval_batch_size 32 \
+  --eval_batch_size 16 \
   --train_crop_size 224 \
   --eval_resize_size 256 \
   --eval_crop_size 224 \
@@ -24,7 +24,7 @@ uv run python -m viclip_ot.train \
   --min_lr 1e-6 \
   --lr_warmup_epochs 2 \
   --lr_warmup_method linear \
-  --best_checkpoint_metrics t2i_R__1 i2t_R__1 \
+  --best_checkpoint_metrics t2i_R__1 \
   --save_best_k 5 \
   --max_grad_norm 1.0 \
   --wandb_logging \
