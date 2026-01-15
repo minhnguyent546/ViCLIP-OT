@@ -405,7 +405,7 @@ def train_model(args: argparse.Namespace) -> None:
     elif args.criterion == "sig_lip_loss":
         criterion = losses.SigLipLoss()
     elif args.criterion == "entropic_ot_loss":
-        criterion = losses.HybridClipTPLoss()
+        criterion = losses.FusedGromovLoss()
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
 
