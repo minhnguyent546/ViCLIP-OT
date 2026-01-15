@@ -405,11 +405,7 @@ def train_model(args: argparse.Namespace) -> None:
     elif args.criterion == "sig_lip_loss":
         criterion = losses.SigLipLoss()
     elif args.criterion == "entropic_ot_loss":
-        logger.info(f"Using Entropic OT loss with reg={args.ot_reg}, n_iters={args.ot_iters}")
-        criterion = losses.EntropicOTLoss(
-            reg=args.ot_reg,
-            n_iters=args.ot_iters,
-        )
+        criterion = losses.HybridClipTPLoss()
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
 

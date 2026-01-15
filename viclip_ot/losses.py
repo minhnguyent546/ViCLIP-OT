@@ -301,175 +301,198 @@ class SigLipLoss(nn.Module):
         return {"loss": loss} if output_dict else loss
 
 
-class EntropicOTLoss(nn.Module):
+
+class TPRegularizer(nn.Module):
     """
-    Drop-in replacement for ClipLoss that uses entropic optimal transport.
-    This implementation is adapted from the OT-CLIP loss modules provided
-    in https://github.com/fan23j/ICML2024-OT-CLIP (training/loss.py).:contentReference[oaicite:1]{index=1}
-
-    Args:
-        reg: Entropic regularization coefficient (larger → smoother plan).
-        n_iters: Number of Sinkhorn iterations.
-        eps: Small epsilon for numerical stability.
-
-    Forward receives:
-    - image_features, text_features
-    - logit_scale, (optional) logit_bias
-    - image_ids (for multi-caption soft labels)
-    - output_dict flag to return dict with "loss"
+    Sinkhorn transport-plan regularizer:
+    - Computes transport plan T from cost matrix M
+    - Penalizes generalized KL between T and a target/prior plan G ("group")
     """
 
-    def __init__(self, reg: float = 0.05, n_iters: int = 20, eps: float = 1e-8):
+    def __init__(
+        self,
+        weight_loss_TP: float = 1.0,
+        sinkhorn_alpha: float = 10.0,
+        OT_max_iter: int = 200,
+        stopThr: float = 5e-3,
+        eps: float = 1e-6,
+    ):
         super().__init__()
-        self.reg = reg
-        self.n_iters = n_iters
-        self.eps = eps
+        self.weight_loss_TP = float(weight_loss_TP)
+        self.sinkhorn_alpha = float(sinkhorn_alpha)
+        self.OT_max_iter = int(OT_max_iter)
+        self.stopThr = float(stopThr)
+        self.eps = float(eps)
 
-    def get_logits(self, image_features, text_features, logit_scale, logit_bias=None):
-        """
-        Compute CLIP-style logits by cosine-like similarity:
-        - Use float32 matmul for better numerical stability
-        - Scale by logit_scale
-        - Optionally add logit_bias (if using adaptive bias)
-        """
-        original_dtype = image_features.dtype
+    @torch.no_grad()
+    def _sinkhorn_err(self, K: Tensor, u: Tensor, v: Tensor, b: Tensor) -> Tensor:
+        # b: (m, 1)
+        bb = v * (K.t() @ u)  # (m, 1)
+        return torch.norm(torch.sum(torch.abs(bb - b), dim=0), p=float("inf"))
 
-        # compute similarity in float (stabilizes backward)
-        logits_per_image = logit_scale * (
-            image_features.float() @ text_features.float().T
+    def forward(self, M: Tensor, group: Tensor) -> Tensor:
+        """
+        Args:
+            M: (n, m) cost matrix (lower is better)
+            group: (n, m) target plan/prior (positive)
+        Returns:
+            loss_tp: scalar
+        """
+        if self.weight_loss_TP <= 1e-6:
+            return M.new_tensor(0.0)
+
+        device = M.device
+
+        # Ensure positivity
+        group = group.to(device).clamp(min=self.eps)
+
+        # Marginals derived from group
+        a = group.sum(dim=1, keepdim=True)  # (n, 1)
+        b = group.sum(dim=0, keepdim=True)  # (m, 1)
+
+        # Sinkhorn in float32 for stability (even if model is fp16/bf16)
+        M32 = M.float()
+        a32 = a.float()
+        b32 = b.float()
+
+        # Stabilize cost before exp to reduce overflow/underflow
+        M32 = M32 - M32.min(dim=1, keepdim=True).values
+
+        K = torch.exp(-M32 * self.sinkhorn_alpha).clamp(min=1e-6)  # (n, m)
+
+        # Initialize u
+        u = torch.ones_like(a32)
+
+        err = M32.new_tensor(1.0)
+        cpt = 0
+
+        while (err > self.stopThr) and (cpt < self.OT_max_iter):
+            v = b32 / (K.t() @ u + self.eps)  # (m, 1)
+            u = a32 / (K @ v + self.eps)      # (n, 1)
+            cpt += 1
+
+            if cpt % 50 == 1:
+                # compute marginal error occasionally
+                err = self._sinkhorn_err(K, u, v, b32)
+
+        # Transport plan
+        T = u * (K * v.t())  # (n, m)
+        T = T.clamp(min=1e-4)
+
+        # Generalized KL(T || group)
+        # sum_ij [ T_ij (log T_ij - log G_ij - 1) + G_ij ]
+        loss_tp = (T * (T.log() - group.float().log() - 1.0) + group.float()).sum()
+        return loss_tp.to(M.dtype) * self.weight_loss_TP
+
+
+class HybridClipTPLoss(nn.Module):
+    """
+    Hybrid loss:
+      total = clip_loss + lambda_tp * TP(M, group)
+
+    - clip_loss: standard CLIP symmetric CE (supports multi-caption via image_ids)
+    - TP regularizer: Sinkhorn plan T from cost M, penalize KL(T || group)
+    """
+
+    def __init__(
+        self,
+        lambda_tp: float = 0.1,
+        sinkhorn_alpha: float = 10.0,
+        OT_max_iter: int = 200,
+        stopThr: float = 5e-3,
+        eps: float = 1e-6,
+    ):
+        super().__init__()
+        self.lambda_tp = float(lambda_tp)
+        self.eps = float(eps)
+        self.tp = TPRegularizer(
+            weight_loss_TP=1.0,
+            sinkhorn_alpha=sinkhorn_alpha,
+            OT_max_iter=OT_max_iter,
+            stopThr=stopThr,
+            eps=eps,
         )
+
+    def get_logits(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+    ):
+        original_dtype = image_features.dtype
+        logits_per_image = logit_scale * (image_features.float() @ text_features.float().T)
         logits_per_text = logits_per_image.T
 
         if logit_bias is not None:
             logits_per_image = logits_per_image + logit_bias
             logits_per_text = logits_per_text + logit_bias
 
-        # convert back to original dtype
-        return (
-            logits_per_image.to(original_dtype),
-            logits_per_text.to(original_dtype),
-        )
-
-    def entropic_ot(self, cost, reg=None, n_iters=None):
-        """
-        Compute entropic optimal transport plan (Sinkhorn algorithm).
-
-        Args:
-            cost: (n, m) cost matrix (lower cost = better match).
-        Returns:
-            P: (n, m) transport plan approximately satisfying uniform marginals.
-        """
-        if reg is None:
-            reg = self.reg
-        if n_iters is None:
-            n_iters = self.n_iters
-
-        # Do Sinkhorn in float32 for stability (even if model is fp16/bf16)
-        orig_dtype = cost.dtype
-        cost = cost.float()
-
-        device = cost.device
-        n, m = cost.shape
-
-        # Uniform marginals
-        a = torch.full((n,), 1.0 / n, device=device, dtype=cost.dtype)
-        b = torch.full((m,), 1.0 / m, device=device, dtype=cost.dtype)
-
-        # Stabilize before exp:
-        # shift by row-wise minimum
-        # cost = cost - cost.min(dim=1, keepdim=True).values
-
-        # Gibbs kernel
-        K = torch.exp(-cost / reg)
-
-        u = torch.ones((n,), device=device, dtype=cost.dtype)
-        v = torch.ones((m,), device=device, dtype=cost.dtype)
-
-        for _ in range(n_iters):
-            Kv = K @ v
-            u = a / (Kv + self.eps)
-
-            KTu = K.T @ u
-            v = b / (KTu + self.eps)
-
-        P = (u.unsqueeze(1) * K) * v.unsqueeze(0)
-
-        # Optional: renormalize rows to sum to 1
-        # P = P / (P.sum(dim=1, keepdim=True) + self.eps)
-
-        return P.to(orig_dtype)
-
+        return logits_per_image.to(original_dtype), logits_per_text.to(original_dtype)
 
     def forward(
         self,
-        image_features,
-        text_features,
-        logit_scale,
-        logit_bias=None,
-        image_ids=None,
+        image_features: Tensor,
+        text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+        image_ids: Tensor | None = None,
         output_dict: bool = False,
         reduction: str = "mean",
     ):
-        """
-        Forward pass computing the OT-based loss.
-
-        If image_ids is None:
-            compute symmetric transport cross-entropy (like CLIP InfoNCE).
-        Else:
-            allow many-to-many soft label matching per the dataset IDs.
-        """
         device = image_features.device
-
-        # compute similarity logits
         logits_i2t, logits_t2i = self.get_logits(
-            image_features=image_features,
-            text_features=text_features,
-            logit_scale=logit_scale,
-            logit_bias=logit_bias,
+            image_features, text_features, logit_scale, logit_bias=logit_bias
         )
 
-        # convert similarities to costs (lower cost = higher similarity)
-        cost_i2t = -logits_i2t
-        cost_t2i = -logits_t2i
-
-        # compute transport plans
-        P_i2t = self.entropic_ot(cost_i2t, reg=self.reg, n_iters=self.n_iters)
-        P_t2i = self.entropic_ot(cost_t2i, reg=self.reg, n_iters=self.n_iters)
-
-        # convert transport plans to logits via log (Softmax(log P) ≈ P)
-        ot_logits_i2t = torch.log(P_i2t + self.eps)
-        ot_logits_t2i = torch.log(P_t2i + self.eps)
+        bs = logits_i2t.size(0)
 
         if image_ids is None:
-            # standard symmetric cross entropy like CLIP
-            labels = torch.arange(
-                ot_logits_i2t.size(0), device=device, dtype=torch.long
-            )
-            loss_i2t = Fun.cross_entropy(ot_logits_i2t, labels, reduction=reduction)
-            loss_t2i = Fun.cross_entropy(ot_logits_t2i, labels, reduction=reduction)
+            labels = torch.arange(bs, device=device, dtype=torch.int64)
+
+            clip_loss_i2t = Fun.cross_entropy(logits_i2t, labels, reduction=reduction)
+            clip_loss_t2i = Fun.cross_entropy(logits_t2i, labels, reduction=reduction)
+
+            # group prior: diagonal plan (one-hot), as float
+            group = torch.eye(bs, device=device, dtype=torch.float32)
         else:
-            # multi-caption soft labels: rows match same image_ids
             image_ids = image_ids.to(device)
             matches = image_ids.view(-1, 1) == image_ids.view(1, -1)
+
             soft_labels = matches.float()
-            soft_labels = soft_labels / (
-                soft_labels.sum(dim=1, keepdim=True) + self.eps
-            )
+            soft_labels = soft_labels / (soft_labels.sum(dim=1, keepdim=True) + self.eps)
 
-            # compute cross entropy with soft targets
-            logp_i2t = Fun.log_softmax(ot_logits_i2t, dim=1)
-            logp_t2i = Fun.log_softmax(ot_logits_t2i, dim=1)
+            logp_i2t = Fun.log_softmax(logits_i2t, dim=1)
+            logp_t2i = Fun.log_softmax(logits_t2i, dim=1)
 
-            loss_i2t = -(soft_labels * logp_i2t).sum(dim=1)
-            loss_t2i = -(soft_labels * logp_t2i).sum(dim=1)
+            clip_loss_i2t = -(soft_labels * logp_i2t).sum(dim=1)
+            clip_loss_t2i = -(soft_labels * logp_t2i).sum(dim=1)
 
             if reduction == "mean":
-                loss_i2t = loss_i2t.mean()
-                loss_t2i = loss_t2i.mean()
+                clip_loss_i2t = clip_loss_i2t.mean()
+                clip_loss_t2i = clip_loss_t2i.mean()
             elif reduction == "sum":
-                loss_i2t = loss_i2t.sum()
-                loss_t2i = loss_t2i.sum()
-            # else: "none" returns per-sample
+                clip_loss_i2t = clip_loss_i2t.sum()
+                clip_loss_t2i = clip_loss_t2i.sum()
+            # else: "none" keep per-sample
 
-        total_loss = (loss_i2t + loss_t2i) / 2.0
-        return {"loss": total_loss} if output_dict else total_loss
+            group = soft_labels  # (bs, bs)
+
+        clip_loss = (clip_loss_i2t + clip_loss_t2i) / 2.0
+
+        # ----- TP regularizer -----
+        M_i2t = (-logits_i2t).detach()
+        M_t2i = (-logits_t2i).detach()
+
+        tp_loss_i2t = self.tp(M_i2t, group)
+        tp_loss_t2i = self.tp(M_t2i, group.t())
+
+        tp_loss = (tp_loss_i2t + tp_loss_t2i) / 2.0
+
+        total = clip_loss + self.lambda_tp * tp_loss
+
+        if output_dict:
+            return {
+                "loss": total,
+            }
+        return total
