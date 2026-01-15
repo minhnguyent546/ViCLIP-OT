@@ -238,26 +238,26 @@ def train_model(args: argparse.Namespace) -> None:
         test_results = eval_model(
             model=model,
             criterion=criterion,
-            eval_data_loader=val_data_loader,
+            eval_data_loader=train_data_loader,
             device=device,
         )
         test_elapsed_time = time.perf_counter() - test_start_time
         print(
             "** Test results **\n"
-            f"  loss: {test_results['loss']:0.6f}\n"
-            "   Image to text:\n"
-            f"    i2t_mean_rank: {test_results['i2t_mean_rank']:0.6f}\n"
-            f"    i2t_median_rank: {test_results['i2t_median_rank']:0.6f}\n"
-            f"    i2t_R__1: {test_results['i2t_R__1']:0.6f}\n"
-            f"    i2t_R__5: {test_results['i2t_R__5']:0.6f}\n"
-            f"    i2t_R__10: {test_results['i2t_R__10']:0.6f}\n"
-            "   Text to image:\n"
-            f"    t2i_mean_rank: {test_results['t2i_mean_rank']:0.6f}\n"
-            f"    t2i_median_rank: {test_results['t2i_median_rank']:0.6f}\n"
-            f"    t2i_R__1: {test_results['t2i_R__1']:0.6f}\n"
-            f"    t2i_R__5: {test_results['t2i_R__5']:0.6f}\n"
-            f"    t2i_R__10: {test_results['t2i_R__10']:0.6f}\n"
-            f"  Elapsed time: {utils.to_hms(test_elapsed_time)}\n"
+            f"    loss: {test_results['loss']:0.6f}\n"
+            "     Text to image:\n"
+            f"        t2i_R__1: {test_results['t2i_R__1']:0.6f}\n"
+            f"        t2i_R__5: {test_results['t2i_R__5']:0.6f}\n"
+            f"        t2i_R__10: {test_results['t2i_R__10']:0.6f}\n"
+            f"        t2i_mean_rank: {test_results['t2i_mean_rank']:0.6f}\n"
+            f"        t2i_median_rank: {test_results['t2i_median_rank']:0.6f}\n"
+            "     Image to text:\n"
+            f"      i2t_R__1: {test_results['i2t_R__1']:0.6f}\n"
+            f"      i2t_R__5: {test_results['i2t_R__5']:0.6f}\n"
+            f"      i2t_R__10: {test_results['i2t_R__10']:0.6f}\n"
+            f"      i2t_mean_rank: {test_results['i2t_mean_rank']:0.6f}\n"
+            f"      i2t_median_rank: {test_results['i2t_median_rank']:0.6f}\n"
+            f"    Elapsed time: {utils.to_hms(test_elapsed_time)}\n"
         )
         return
 
