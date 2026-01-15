@@ -1,0 +1,15 @@
+image_config:
+  # model_name: timm/convnext_base.fb_in22k_ft_in1k
+  model_name: timm/convnextv2_base.fcmae_ft_in22k_in1k
+  pretrained: true
+  pool: avg
+  proj: linear # low-resource
+  proj_bias: false
+  proj_dropout_rate: 0.1
+
+text_config:
+  model_name: google/embeddinggemma-300m
+  proj: none
+  proj_bias: false
+
+embed_dim: 768
