@@ -173,7 +173,11 @@ class ImageEncoder(nn.Module):
 
 
 class TextEncoder(nn.Module):
-    _SUPPORTED_MODELS = ["google/embeddinggemma-300m"]
+    _SUPPORTED_MODELS = [
+        "google/embeddinggemma-300m"
+
+        "BAAI/bge-m3",
+    ]
 
     def __init__(
         self,
@@ -195,6 +199,8 @@ class TextEncoder(nn.Module):
 
         if self.config.model_name == "google/embeddinggemma-300m":
             self._add_dense_for_embeddinggemma_300m()
+        elif self.config.model_name == "BAAI/bge-m3":
+            self.dense = nn.Identity() # no extra layers needed
         else:
             raise NotImplementedError(
                 f"TextEncoder for model {self.config.model_name} is not implemented yet."
@@ -309,6 +315,15 @@ class TextEncoder(nn.Module):
 
         # get Last Hidden State (batch_size, seq_len, hidden_dim)
         last_hidden_state = outputs.last_hidden_state
+
+        if self.config.model_name == "BAAI/bge-m3":
+            # use CLS token
+            last_hidden_state = last_hidden_state[:, 0, :]
+
+            if normalize:
+                last_hidden_state = Fun.normalize(last_hidden_state, p=2, dim=1)
+
+            return last_hidden_state
 
         # We must mask out padding tokens so they don't affect the average
         attention_mask = inputs["attention_mask"]
