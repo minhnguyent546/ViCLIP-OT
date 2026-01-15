@@ -175,6 +175,8 @@ class TextEncoder(nn.Module):
         "google/embeddinggemma-300m",
         "baai/bge-m3",
         "qwen/qwen3-embedding-0.6b",
+        "intfloat/multilingual-e5-base",
+        "intfloat/multilingual-e5-large",
     ]
 
     def __init__(
@@ -322,6 +324,17 @@ class TextEncoder(nn.Module):
                 torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths
             ]
 
+    def _average_pool(self,last_hidden_states: Tensor,
+                    attention_mask: Tensor) -> Tensor:
+
+        if self.config.model_name != "intfloat/multilingual-e5-base" and self.config.model_name != "intfloat/multilingual-e5-large":
+            raise ValueError(
+                "_average_pool is only supported for 'intfloat/multilingual-e5-base' and 'intfloat/multilingual-e5-large' models."
+            )
+
+        last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
+        return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
+
     def freeze(self, unfreeze_dense: bool = False) -> None:
         for param in self.encoder.parameters():
             param.requires_grad = False
@@ -350,6 +363,18 @@ class TextEncoder(nn.Module):
         if self.config.model_name == "qwen/qwen3-embedding-0.6b":
             # use last token pooling
             last_hidden_state = self._last_token_pool(
+                last_hidden_states=last_hidden_state,
+                attention_mask=inputs["attention_mask"],
+            )
+
+            if normalize:
+                last_hidden_state = Fun.normalize(last_hidden_state, p=2, dim=1)
+
+            return last_hidden_state
+
+        if self.config.model_name == "intfloat/multilingual-e5-base" or self.config.model_name == "intfloat/multilingual-e5-large":
+            # use average pooling
+            last_hidden_state = self._average_pool(
                 last_hidden_states=last_hidden_state,
                 attention_mask=inputs["attention_mask"],
             )

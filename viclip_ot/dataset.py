@@ -67,10 +67,12 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int]]):
         root_dir: str,
         metadata_json_file: str,
         image_transforms=None,
+        model_fmt: Literal["gemma", "e5", "qwen3", "bge"] = "gemma",
     ) -> None:
         self.root_dir = root_dir
         self.metadata_file_path = os.path.join(self.root_dir, metadata_json_file)
         self.image_transforms = image_transforms
+        self.model_fmt = model_fmt
 
         logger.info(f"Loading image text data from: {self.metadata_file_path}")
         with open(self.metadata_file_path, "r") as f:
@@ -119,9 +121,35 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int]]):
         if self.image_transforms is not None:
             image = self.image_transforms(image)
 
-        # https://huggingface.co/google/embeddinggemma-300m#prompt-instructions
-        # TODO: this prompt is for encode document, consider supporting encode for query.
-        formatted_captions = [f"sentence similarity | query: {caption}" for caption in captions]
+        formatted_captions = None
+        if self.model_fmt == "gemma":
+            # https://huggingface.co/google/embeddinggemma-300m#prompt-instructions
+            # TODO: this prompt is for encode document, consider supporting encode for query.
+            formatted_captions = [f"sentence similarity | query: {caption}" for caption in captions]
+
+        elif self.model_fmt == "e5":
+            # https://huggingface.co/intfloat/multilingual-e5-base#usage
+            formatted_captions = [f"query: {caption}" for caption in captions]
+
+        elif self.model_fmt == "qwen3":
+            def get_detailed_instruct(task_description: str, query: str) -> str:
+                return f'Instruct: {task_description}\nQuery:{query}'
+
+            task = 'Given a web search query, retrieve relevant passages that answer the query'
+
+            # https://huggingface.co/qwen/qwen3-embedding-0.6b#usage
+            formatted_captions = [f"{get_detailed_instruct(task, caption)}" for caption in captions]
+
+        elif self.model_fmt == "bge":
+            # https://huggingface.co/baai/bge-m3#usage
+            # BGE does not require special formatting
+            formatted_captions = [f"{caption}" for caption in captions]
+
+        else:
+            raise ValueError(
+                f"Invalid model_fmt: {self.model_fmt}. "
+                f"Expected one of ['gemma', 'e5', 'qwen3', 'bge']"
+            )
 
         return image, formatted_captions, int(image_id)
 
