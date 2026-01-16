@@ -412,8 +412,8 @@ class TextEncoder(nn.Module):
 
             sentence_embeddings = __mean_pooling(outputs, inputs['attention_mask'])
 
-            # if normalize:
-            #     sentence_embeddings = Fun.normalize(sentence_embeddings, p=2, dim=1)
+            if normalize:
+                sentence_embeddings = Fun.normalize(sentence_embeddings, p=2, dim=1)
 
             return sentence_embeddings
 
