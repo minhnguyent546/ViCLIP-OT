@@ -301,13 +301,89 @@ class SigLipLoss(nn.Module):
         return {"loss": loss} if output_dict else loss
 
 
-class HybridClipTPLoss(nn.Module):
+def Sinkhorn(a: Tensor, b: Tensor, M: Tensor, reg: float, max_iter: int = 100, thresh: float = 1e-3) -> Tensor:
     """
-    Hybrid loss
+    a: [B, N], b: [B, M], M: [B, N, M]
+    return: T: [B, N, M]
+    """
+    K = torch.exp(-M / reg)
+    r = torch.ones_like(a)
+    c = torch.ones_like(b)
+
+    for _ in range(max_iter):
+        r0 = r
+        r = a / torch.matmul(K, c.unsqueeze(-1)).squeeze(-1).clamp_min(1e-12)
+        c = b / torch.matmul(K.permute(0, 2, 1).contiguous(), r.unsqueeze(-1)).squeeze(-1).clamp_min(1e-12)
+        err = (r - r0).abs().mean(dim=1)
+        if torch.all(err < thresh):
+            break
+
+    T = torch.matmul(r.unsqueeze(-1), c.unsqueeze(-2)) * K
+    return T
+
+
+class HybridClipTPLoss(nn.Module):
+    """Hybrid CLIP loss with Entropic Optimal Transport (OT) plan.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        reg: float = 0.05,
+        max_iter: int = 100,
+        thresh: float = 1e-3,
+        cost_mode: str = "softmax_1m",  # "softmax_1m" | "neglog_softmax"
+        eps: float = 1e-12,
+    ):
         super().__init__()
+        self.reg = float(reg)
+        self.max_iter = int(max_iter)
+        self.thresh = float(thresh)
+        self.cost_mode = cost_mode
+        self.eps = float(eps)
+
+    def get_logits(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+    ):
+        # Float32 matmul for stability
+        original_dtype = image_features.dtype
+        logits_per_image = logit_scale * (image_features.float() @ text_features.float().T)
+        logits_per_text = logits_per_image.T
+
+        if logit_bias is not None:
+            logits_per_image = logits_per_image + logit_bias
+            logits_per_text = logits_per_text + logit_bias
+
+        return logits_per_image.to(original_dtype), logits_per_text.to(original_dtype)
+
+    def _build_cost(self, logits: Tensor, logit_scale: Tensor) -> Tensor:
+        if self.cost_mode == "softmax_1m":
+            prob = logits.softmax(dim=-1)
+            cost = 1.0 - prob
+        elif self.cost_mode == "neglog_softmax":
+            prob = logits.softmax(dim=-1).clamp_min(self.eps)
+            cost = -torch.log(prob)
+        else:
+            raise ValueError(f"Unknown cost_mode={self.cost_mode}")
+        return cost
+
+    def _entropic_ot_plan(self, cost: Tensor) -> Tensor:
+        """
+        cost: [B, B]
+        return plan: [B, B] (transport plan)
+        """
+        device = cost.device
+        B = cost.shape[0]
+
+        a = torch.full((1, B), 1.0 / B, device=device, dtype=cost.dtype)
+        b = torch.full((1, B), 1.0 / B, device=device, dtype=cost.dtype)
+        M = cost.unsqueeze(0)
+
+        T = Sinkhorn(a, b, M, reg=self.reg, max_iter=self.max_iter, thresh=self.thresh)[0]
+        return T
 
     def forward(
         self,
@@ -319,4 +395,47 @@ class HybridClipTPLoss(nn.Module):
         output_dict: bool = False,
         reduction: str = "mean",
     ):
-        raise NotImplementedError("HybridClipTPLoss is not yet implemented.")
+        device = image_features.device
+        logits_i, logits_t = self.get_logits(image_features, text_features, logit_scale, logit_bias)
+
+        B = logits_i.shape[0]
+
+        # Build OT plan i2t
+        cost_i = self._build_cost(logits_i, logit_scale)
+        T_i = self._entropic_ot_plan(cost_i)  # [B,B]
+
+        # Build OT plan t2i
+        cost_t = self._build_cost(logits_t, logit_scale)
+        T_t = self._entropic_ot_plan(cost_t)  # [B,B]
+
+        if image_ids is None:
+            # hard labels (diag)
+            labels = torch.arange(B, device=device, dtype=torch.long)
+            loss_i2t = Fun.cross_entropy(T_i, labels, reduction=reduction)
+            loss_t2i = Fun.cross_entropy(T_t, labels, reduction=reduction)
+        else:
+            # soft labels by matching image_ids
+            image_ids = image_ids.to(device)
+            matches = image_ids.view(-1, 1) == image_ids.view(1, -1)  # [B,B]
+            soft = matches.float()
+            soft = soft / soft.sum(dim=1, keepdim=True).clamp_min(self.eps)
+
+            # cross entropy + soft targets: -sum(y * log_softmax(x))
+            logp_i = Fun.log_softmax(T_i, dim=-1)
+            logp_t = Fun.log_softmax(T_t, dim=-1)
+            loss_i2t = -(soft * logp_i).sum(dim=1)
+            loss_t2i = -(soft * logp_t).sum(dim=1)
+
+            if reduction == "mean":
+                loss_i2t = loss_i2t.mean()
+                loss_t2i = loss_t2i.mean()
+            elif reduction == "sum":
+                loss_i2t = loss_i2t.sum()
+                loss_t2i = loss_t2i.sum()
+            elif reduction == "none":
+                pass
+            else:
+                raise ValueError(f"Unknown reduction={reduction}")
+
+        total_loss = (loss_i2t + loss_t2i) / 2.0
+        return {"loss": total_loss, "T_i2t": T_i, "T_t2i": T_t} if output_dict else total_loss
