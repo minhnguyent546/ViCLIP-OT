@@ -96,7 +96,7 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
         self.caption_ids_list: list[list[int]] = []
         self.samples: list[tuple[int, str, list[str]]] = []
         pair_count = 0
-        for image_id in captions_by_image_id:
+        for image_id in sorted(captions_by_image_id.keys()):
             captions_by_image_id[image_id].sort(key=lambda x: x[0])  # sort by caption_id
             captions = [caption for _caption_id, caption in captions_by_image_id[image_id]]
             image_path = os.path.join(self.root_dir, self.id_to_image_path[image_id])
@@ -104,9 +104,6 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
 
             self.caption_ids_list.append(list(range(pair_count, pair_count + len(captions))))
             pair_count += len(captions)
-
-        # sort by image_id
-        self.samples.sort(key=lambda x: x[0])  # sort by image_id
 
     def get_caption_ids(self, indices: list[int]) -> list[int]:
         caption_ids: list[int] = []
