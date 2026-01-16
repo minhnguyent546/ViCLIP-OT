@@ -72,6 +72,8 @@ def train_model(args: argparse.Namespace) -> None:
         criterion = losses.ClipLoss()
     elif args.criterion == "sig_lip_loss":
         criterion = losses.SigLipLoss()
+    elif args.criterion == "batch_level_entropic_ot_loss":
+        criterion = losses.BatchLevelEntropicOTLoss()
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
 
