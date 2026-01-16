@@ -187,6 +187,7 @@ class ImageTextCollate:
 
         images = torch.stack(images)
         image_ids = torch.tensor(image_ids, dtype=torch.int64)
+        indices = torch.tensor(indices, dtype=torch.int64)
 
         if self.caption_to_use == "first":
             captions = [caption[0] for caption in captions]
