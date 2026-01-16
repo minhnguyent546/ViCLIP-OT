@@ -7,7 +7,7 @@ image_config:
   proj_dropout_rate: 0.1
 
 text_config:
-  model_name: intfloat/multilingual-e5-small
+  model_name: intfloat/multilingual-e5-base
   proj: none
   proj_bias: false
 
