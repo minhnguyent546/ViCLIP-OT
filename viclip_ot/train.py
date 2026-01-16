@@ -694,7 +694,7 @@ def train_model(args: argparse.Namespace) -> None:
         # testing
         test_results = eval_model(
             model=model,
-            criterion=criterion,
+            criterion=partial(criterion, **criterion_kwargs),
             eval_data_loader=test_data_loader,
             device=device,
         )
