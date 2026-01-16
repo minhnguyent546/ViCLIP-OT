@@ -390,6 +390,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         self,
         image_features: Tensor,
         text_features: Tensor,
+        sim_matrix: Tensor,
         logit_scale: Tensor,
         logit_bias: Tensor | None = None,
         image_ids: Tensor | None = None,
@@ -428,6 +429,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
             # 1-1 matching between image and text
             labels = torch.arange(batch_size, device=device, dtype=torch.int64)
 
+            # TODO: could we pass `sim_matrix`` here?
             loss_i2t = Fun.nll_loss(
                 input=log_transport_plan,
                 target=labels,
@@ -447,21 +449,39 @@ class BatchLevelEntropicOTLoss(nn.Module):
             soft_labels = matches.float()
             soft_labels = soft_labels / soft_labels.sum(dim=1, keepdim=True)
 
-            # Use KL Divergence for soft labels
-            # KL(target || input) = sum(target * (log(target) - input))
-            # Here input is log_plan.
-            loss_i2t = Fun.kl_div(
-                log_transport_plan,
-                soft_labels,
-                reduction=("batchmean" if reduction == "mean" else reduction),
-                log_target=False,
-            )
+            # # Use KL Divergence for soft labels
+            # # KL(target || input) = sum(target * (log(target) - input))
+            # # Here input is log_plan.
+            # loss_i2t = Fun.kl_div(
+            #     log_transport_plan,
+            #     sim_matrix,
+            #     reduction=("batchmean" if reduction == "mean" else reduction),
+            #     log_target=False,
+            # )
             loss_t2i = Fun.kl_div(
                 log_transport_plan.T,
-                soft_labels,
+                sim_matrix,
                 reduction=("batchmean" if reduction == "mean" else reduction),
                 log_target=False,
             )
+
+            #  Generalized KL Divergence
+            loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
+            loss_t2i = (
+                transport_plan.T * (transport_plan.T.log() - sim_matrix.T.log() - 1) + sim_matrix.T
+            )
+            if reduction == "mean":
+                loss_i2t = loss_i2t.sum() / batch_size
+                loss_t2i = loss_t2i.sum() / batch_size
+            elif reduction == "sum":
+                loss_i2t = loss_i2t.sum()
+                loss_t2i = loss_t2i.sum()
+            elif reduction == "none":
+                pass
+            else:
+                raise ValueError(
+                    f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
+                )
 
         total_loss = (loss_i2t + loss_t2i) / 2
 
@@ -497,6 +517,7 @@ class HybridClipTPLoss(nn.Module):
         image_features: Tensor,
         text_features: Tensor,
         logit_scale: Tensor,
+        sim_matrix: Tensor,
         epoch: int,
         logit_bias: Tensor | None = None,
         image_ids: Tensor | None = None,
@@ -517,6 +538,7 @@ class HybridClipTPLoss(nn.Module):
             ot_loss_value = self.ot_loss(
                 image_features=image_features,
                 text_features=text_features,
+                sim_matrix=sim_matrix,
                 logit_scale=logit_scale,
                 logit_bias=logit_bias,
                 image_ids=image_ids,

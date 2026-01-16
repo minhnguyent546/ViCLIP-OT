@@ -2,7 +2,6 @@ import argparse
 import os
 import time
 from datetime import datetime
-from functools import partial
 from typing import Literal
 
 import torch
@@ -91,6 +90,7 @@ def train_model(args: argparse.Namespace) -> None:
         )
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
+    eval_criterion = losses.ClipLoss()
 
     if args.linear_probing:
         raise NotImplementedError("Loading from checkpoint is not implemented yet.")
@@ -153,6 +153,9 @@ def train_model(args: argparse.Namespace) -> None:
             raise ValueError(f"Unsupported model name for determining model format: {model_name}")
 
     logger.info(f"Determined model format: {model_fmt()}")
+
+    # TODO: refactor
+    caption_embeddings = torch.load("uit_openviic_train_caption_embeddings", map_location="cpu")
 
     train_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
@@ -514,6 +517,15 @@ def train_model(args: argparse.Namespace) -> None:
                 text_inputs = batches[0]["text_inputs"].to(device=device, non_blocking=True)
                 image_ids = batches[0]["image_ids"]
 
+                if isinstance(
+                    criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                ):
+                    sample_indices = batches[0]["indices"]
+                    sim_matrix = (
+                        caption_embeddings[sample_indices] @ caption_embeddings[sample_indices].T
+                    )
+                    criterion_kwargs["sim_matrix"] = sim_matrix
+
                 with autocast_context:
                     model_outputs = model(images, text_inputs)
                     loss = criterion(
@@ -548,6 +560,16 @@ def train_model(args: argparse.Namespace) -> None:
                                 cached_features[key].append(value)
 
                 all_image_ids = torch.cat([batch["image_ids"] for batch in batches], dim=0)
+
+                if isinstance(
+                    criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                ):
+                    all_indices = torch.cat([batch["indices"] for batch in batches], dim=0)
+                    sim_matrix = (
+                        caption_embeddings[all_indices] @ cached_features["image_features"].T
+                    )
+                    criterion_kwargs["sim_matrix"] = sim_matrix
+
                 accum_num_samples = 0
                 # step 2: re-do the forward pass for those batches, and use the cache features
                 for batch_idx, batch in enumerate(batches):
@@ -678,7 +700,7 @@ def train_model(args: argparse.Namespace) -> None:
         # validation
         val_results = eval_model(
             model=model,
-            criterion=partial(criterion, **criterion_kwargs),
+            criterion=eval_criterion,
             eval_data_loader=val_data_loader,
             device=device,
         )
@@ -695,7 +717,7 @@ def train_model(args: argparse.Namespace) -> None:
         # testing
         test_results = eval_model(
             model=model,
-            criterion=partial(criterion, **criterion_kwargs),
+            criterion=eval_criterion,
             eval_data_loader=test_data_loader,
             device=device,
         )
