@@ -202,8 +202,7 @@ class TextEncoder(nn.Module):
             tokenizer_args["padding_side"] = "left"
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.config.model_name, trust_remote_code=True,
-            **tokenizer_args
+            self.config.model_name, trust_remote_code=True, **tokenizer_args
         )
         if self.config.pretrained:
             self.encoder = AutoModel.from_pretrained(
@@ -216,11 +215,17 @@ class TextEncoder(nn.Module):
             logger.info(f"Initializing TextEncoder {self.config.model_name} from scratch.")
             self.encoder = AutoModel.from_config(_model_config, trust_remote_code=True)
 
+        # TODO: this is a messy way, infer from modules.json should be better
         if self.config.model_name == "google/embeddinggemma-300m":
             self._add_dense_for_embeddinggemma_300m()
         elif self.config.model_name == "baai/bge-m3":
             self.dense = nn.Identity()  # no extra layers needed
         elif self.config.model_name == "qwen/qwen3-embedding-0.6b":
+            self.dense = nn.Identity()  # no extra layers needed
+        elif self.config.model_name in (
+            "intfloat/multilingual-e5-base",
+            "intfloat/multilingual-e5-large",
+        ):
             self.dense = nn.Identity()  # no extra layers needed
         else:
             raise NotImplementedError(
@@ -348,10 +353,11 @@ class TextEncoder(nn.Module):
                 torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths
             ]
 
-    def _average_pool(self,last_hidden_states: Tensor,
-                    attention_mask: Tensor) -> Tensor:
-
-        if self.config.model_name != "intfloat/multilingual-e5-base" and self.config.model_name != "intfloat/multilingual-e5-large":
+    def _average_pool(self, last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
+        if (
+            self.config.model_name != "intfloat/multilingual-e5-base"
+            and self.config.model_name != "intfloat/multilingual-e5-large"
+        ):
             raise ValueError(
                 "_average_pool is only supported for 'intfloat/multilingual-e5-base' and 'intfloat/multilingual-e5-large' models."
             )
@@ -369,7 +375,13 @@ class TextEncoder(nn.Module):
                     param.requires_grad = False
 
     def get_embeddings(self, inputs: dict[str, Tensor], *, normalize: bool = False) -> Tensor:
-        assert self.config.model_name in ("google/embeddinggemma-300m", "baai/bge-m3", "qwen/qwen3-embedding-0.6b", "intfloat/multilingual-e5-base", "intfloat/multilingual-e5-large"), (
+        assert self.config.model_name in (
+            "google/embeddinggemma-300m",
+            "baai/bge-m3",
+            "qwen/qwen3-embedding-0.6b",
+            "intfloat/multilingual-e5-base",
+            "intfloat/multilingual-e5-large",
+        ), (
             "get_embeddings currently only supports 'google/embeddinggemma-300m', 'baai/bge-m3', 'qwen/qwen3-embedding-0.6b', 'intfloat/multilingual-e5-base' and 'intfloat/multilingual-e5-large' models."
         )
 
@@ -400,7 +412,10 @@ class TextEncoder(nn.Module):
 
             return last_hidden_state
 
-        if self.config.model_name == "intfloat/multilingual-e5-base" or self.config.model_name == "intfloat/multilingual-e5-large":
+        if (
+            self.config.model_name == "intfloat/multilingual-e5-base"
+            or self.config.model_name == "intfloat/multilingual-e5-large"
+        ):
             # use average pooling
             last_hidden_state = self._average_pool(
                 last_hidden_states=last_hidden_state,
