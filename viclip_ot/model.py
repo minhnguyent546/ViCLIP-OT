@@ -191,6 +191,7 @@ class TextEncoder(nn.Module):
         "qwen/qwen3-embedding-0.6b",
         "intfloat/multilingual-e5-base",
         "intfloat/multilingual-e5-large",
+        "keepitreal/vietnamese-sbert",
     ]
 
     def __init__(
@@ -235,6 +236,8 @@ class TextEncoder(nn.Module):
             "intfloat/multilingual-e5-base",
             "intfloat/multilingual-e5-large",
         ):
+            self.dense = nn.Identity()  # no extra layers needed
+        elif self.config.model_name == "keepitreal/vietnamese-sbert":
             self.dense = nn.Identity()  # no extra layers needed
         else:
             raise NotImplementedError(
@@ -390,12 +393,29 @@ class TextEncoder(nn.Module):
             "qwen/qwen3-embedding-0.6b",
             "intfloat/multilingual-e5-base",
             "intfloat/multilingual-e5-large",
+            "keepitreal/vietnamese-sbert",
         ), (
-            "get_embeddings currently only supports 'google/embeddinggemma-300m', 'baai/bge-m3', 'qwen/qwen3-embedding-0.6b', 'intfloat/multilingual-e5-base' and 'intfloat/multilingual-e5-large' models."
+            "get_embeddings currently only supports 'google/embeddinggemma-300m', 'baai/bge-m3', 'qwen/qwen3-embedding-0.6b', "
+            "'intfloat/multilingual-e5-base', 'intfloat/multilingual-e5-large', and 'keepitreal/vietnamese-sbert' models."
         )
 
         # forward Pass
         outputs = self.encoder(**inputs)
+
+        if self.config.model_name == "keepitreal/vietnamese-sbert":
+            # https://huggingface.co/keepitreal/vietnamese-sbert
+            # Mean Pooling - Take attention mask into account for correct averaging
+            def __mean_pooling(model_output, attention_mask):
+                token_embeddings = model_output[0] # First element of model_output contains all token embeddings
+                input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+                return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+
+            sentence_embeddings = __mean_pooling(outputs, inputs['attention_mask'])
+
+            # if normalize:
+            #     sentence_embeddings = Fun.normalize(sentence_embeddings, p=2, dim=1)
+
+            return sentence_embeddings
 
         # get Last Hidden State (batch_size, seq_len, hidden_dim)
         last_hidden_state = outputs.last_hidden_state
@@ -435,6 +455,7 @@ class TextEncoder(nn.Module):
                 last_hidden_state = Fun.normalize(last_hidden_state, p=2, dim=1)
 
             return last_hidden_state
+
 
         assert self.config.model_name == "google/embeddinggemma-300m", (
             "Only 'google/embeddinggemma-300m' model reaches this point."
