@@ -60,7 +60,6 @@ def train_model(args: argparse.Namespace) -> None:
     logger.info(f"Using device: {device}")
 
     # creating model
-
     model_config = ViCLIPOTConfig.model_validate(utils.load_yaml_file(args.model_config))
     logger.info(f"Model config: {model_config}")
     model = ViCLIPOT(config=model_config)
@@ -68,15 +67,22 @@ def train_model(args: argparse.Namespace) -> None:
     logger.info(f"Model: {model}")
     model.to(device)
 
+    # loss fun
+    if args.criterion == "clip_loss":
+        criterion = losses.ClipLoss()
+    elif args.criterion == "sig_lip_loss":
+        criterion = losses.SigLipLoss()
+    else:
+        raise ValueError(f"Unsupported criterion: {args.criterion}")
+
     if args.linear_probing:
         raise NotImplementedError("Loading from checkpoint is not implemented yet.")
         logger.info("Linear probing enabled")
 
     if args.from_checkpoint is not None:
-        raise NotImplementedError("Loading from checkpoint is not implemented yet.")
         logger.info(f"Loading model from checkpoint: {args.from_checkpoint}")
-        checkpoint = torch.load(args.from_checkpoint, map_location=device)
-        model.load_state_dict(checkpoint["model_state_dict"])
+        checkpoint = torch.load(args.from_checkpoint, map_location=device, weights_only=False)
+        model.load_state_dict(checkpoint["model_state_dict"], strict=True)
 
     if args.lock_image:
         model.lock_image_tower(
@@ -248,7 +254,31 @@ def train_model(args: argparse.Namespace) -> None:
     )
 
     if args.run_test_only:
-        raise NotImplementedError("Test only mode is not implemented yet.")
+        test_start_time = time.perf_counter()
+        test_results = eval_model(
+            model=model,
+            criterion=criterion,
+            eval_data_loader=test_data_loader,
+            device=device,
+        )
+        test_elapsed_time = time.perf_counter() - test_start_time
+        print(
+            "** Test results **\n"
+            f"    loss: {test_results['loss']:0.6f}\n"
+            "     Text to image:\n"
+            f"        t2i_R__1: {test_results['t2i_R__1']:0.6f}\n"
+            f"        t2i_R__5: {test_results['t2i_R__5']:0.6f}\n"
+            f"        t2i_R__10: {test_results['t2i_R__10']:0.6f}\n"
+            f"        t2i_mean_rank: {test_results['t2i_mean_rank']:0.6f}\n"
+            f"        t2i_median_rank: {test_results['t2i_median_rank']:0.6f}\n"
+            "     Image to text:\n"
+            f"      i2t_R__1: {test_results['i2t_R__1']:0.6f}\n"
+            f"      i2t_R__5: {test_results['i2t_R__5']:0.6f}\n"
+            f"      i2t_R__10: {test_results['i2t_R__10']:0.6f}\n"
+            f"      i2t_mean_rank: {test_results['i2t_mean_rank']:0.6f}\n"
+            f"      i2t_median_rank: {test_results['i2t_median_rank']:0.6f}\n"
+            f"    Elapsed time: {utils.to_hms(test_elapsed_time)}\n"
+        )
         return
 
     assert checkpoint_dir is not None

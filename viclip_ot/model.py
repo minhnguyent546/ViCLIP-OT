@@ -15,7 +15,7 @@ from timm.layers.attention_pool2d import RotAttentionPool2d
 from timm.layers.mlp import Mlp
 from timm.models.helpers import group_modules, group_parameters
 from torch import Tensor
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 from viclip_ot.utils.logger import logger
 from viclip_ot.utils.training import freeze_batch_norm_2d
@@ -36,8 +36,8 @@ class ViCLIPOTTextConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_name: str
-    # 'none' means no projection layer
-    proj: Literal["linear", "none"] = "none"
+    pretrained: bool = True
+    proj: Literal["linear", "none"] = "none"  # 'none' means no projection layer
     proj_bias: bool = False
 
 
@@ -76,6 +76,7 @@ class ImageEncoder(nn.Module):
             )
 
         is_custom_pool = self.config.pool in ("abs_attn", "rot_attn")
+        # TODO: initialize weights if `pretrained` is False
         self.trunk = timm.create_model(
             model_name=self.config.model_name,
             pretrained=self.config.pretrained,
@@ -85,13 +86,12 @@ class ImageEncoder(nn.Module):
         feat_size = trunk_default_config["pool_size"]
         if is_custom_pool:
             # if attn pooling used, remove both classifier and default pool
-            # pyright: ignore[reportCallIssue]
-            self.trunk.reset_classifier(num_classes=0, global_pool="")
+            self.trunk.reset_classifier(num_classes=0, global_pool="")  # pyright: ignore[reportCallIssue]
+
         else:
             # reset global pool if pool config set, otherwise leave as network default
             reset_kwargs = {"global_pool": self.config.pool} if self.config.pool else {}
-            # pyright: ignore[reportCallIssue]
-            self.trunk.reset_classifier(0, **reset_kwargs)
+            self.trunk.reset_classifier(0, **reset_kwargs)  # pyright: ignore[reportCallIssue]
 
         prev_chs: int = self.trunk.num_features
 
@@ -115,18 +115,23 @@ class ImageEncoder(nn.Module):
             )
             # Initialize with Xavier/Glorot for better gradient flow in contrastive learning
             nn.init.xavier_uniform_(proj_layer.weight)
-            # pyright: ignore[reportUnnecessaryComparison]
-            if proj_layer.bias is not None:
+            if proj_layer.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
                 nn.init.zeros_(proj_layer.bias)
             head_layers["proj"] = proj_layer
         elif self.config.proj == "mlp":
-            head_layers["mlp"] = Mlp(
+            mlp = Mlp(
                 in_features=prev_chs,
                 hidden_features=2 * embed_dim,
                 out_features=embed_dim,
                 drop=(self.config.proj_dropout_rate, 0),
                 bias=(True, self.config.proj_bias),
             )
+            for m in mlp.modules():
+                if isinstance(m, nn.Linear):
+                    nn.init.xavier_uniform_(m.weight)
+                    if m.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
+                        nn.init.zeros_(m.bias)
+            head_layers["mlp"] = mlp
         else:
             raise ValueError(f"Unsupported proj type: {self.config.proj}")
 
@@ -145,8 +150,8 @@ class ImageEncoder(nn.Module):
                 freeze_batch_norm_2d(self.trunk)
         else:
             # NOTE: partial freeze requires latest timm (master) branch and is subject to change
-            # pyright: ignore[reportCallIssue]
-            matcher = self.trunk.group_matcher()
+            matcher = self.trunk.group_matcher()  # pyright: ignore[reportCallIssue]
+
             gparams = group_parameters(self.trunk, matcher)
             max_layer_id = max(gparams.keys())
             max_layer_id = max_layer_id - last_unfreeze_groups
@@ -192,8 +197,6 @@ class TextEncoder(nn.Module):
                 f"Unsupported model: {self.config.model_name}. Call `list_models()` to see supported models."
             )
 
-        self.encoder = AutoModel.from_pretrained(self.config.model_name, trust_remote_code=True)
-
         tokenizer_args: dict[str, Any] = {}
         if self.config.model_name == "qwen/qwen3-embedding-0.6b":
             tokenizer_args["padding_side"] = "left"
@@ -202,6 +205,15 @@ class TextEncoder(nn.Module):
             self.config.model_name, trust_remote_code=True,
             **tokenizer_args
         )
+        if self.config.pretrained:
+            self.encoder = AutoModel.from_pretrained(
+                self.config.model_name, trust_remote_code=True
+            )
+        else:
+            _model_config = AutoConfig.from_pretrained(
+                self.config.model_name, trust_remote_code=True
+            )
+            self.encoder = AutoModel.from_config(_model_config, trust_remote_code=True)
 
         if self.config.model_name == "google/embeddinggemma-300m":
             self._add_dense_for_embeddinggemma_300m()
@@ -224,8 +236,7 @@ class TextEncoder(nn.Module):
             # Initialize the projection layer with Xavier/Glorot initialization
             # to help with gradient flow in contrastive learning
             nn.init.xavier_uniform_(self.fc.weight)
-            # pyright: ignore[reportUnnecessaryComparison]
-            if self.fc.bias is not None:
+            if self.fc.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
                 nn.init.zeros_(self.fc.bias)
         elif self.config.proj == "none":
             if intermediate_embed_dim != embed_dim:
@@ -263,11 +274,13 @@ class TextEncoder(nn.Module):
         logger.info(f"[TextEncoder - embeddinggemma-300m] Has Normalize: {norm_exists}")
 
         dense_layers = [self._load_dense(ds) for ds in sorted(dense_subs)]
-        # pyright: ignore[reportIndexIssue]
-        if dense_layers and dense_layers[-1][-1] == nn.Identity():
-            # pyright: ignore[reportIndexIssue]
-            dense_layers[-1][-1] = nn.GELU()
-        self.dense = nn.Sequential(*dense_layers)
+        if dense_layers and dense_layers[-1][-1] == nn.Identity():  # pyright: ignore[reportIndexIssue]
+            dense_layers[-1][-1] = nn.GELU()  # pyright: ignore[reportIndexIssue]
+
+        if dense_layers:
+            self.dense = nn.Sequential(*dense_layers)
+        else:
+            self.dense = nn.Identity()
 
     def _load_dense(self, subfolder: str) -> nn.Module:
         cfg_p = hf_hub_download(self.config.model_name, filename=f"{subfolder}/config.json")
@@ -276,25 +289,35 @@ class TextEncoder(nn.Module):
 
         lin = torch.nn.Linear(cfg["in_features"], cfg["out_features"], bias=cfg.get("bias", True))
 
-        # load weights (safetensors preferred; fall back to bin)
-        try:
-            st = load_safetensors(
-                hf_hub_download(self.config.model_name, filename=f"{subfolder}/model.safetensors")
-            )
-        except Exception:
-            st = torch.load(
-                hf_hub_download(self.config.model_name, filename=f"{subfolder}/pytorch_model.bin"),
-                map_location="cpu",
-            )
+        if self.config.pretrained:
+            # load weights (safetensors preferred; fall back to bin)
+            try:
+                st = load_safetensors(
+                    hf_hub_download(
+                        self.config.model_name, filename=f"{subfolder}/model.safetensors"
+                    )
+                )
+            except Exception:
+                st = torch.load(
+                    hf_hub_download(
+                        self.config.model_name, filename=f"{subfolder}/pytorch_model.bin"
+                    ),
+                    map_location="cpu",
+                )
 
-        # Normalize key names if needed
-        if "linear.weight" in st:
-            st["weight"] = st.pop("linear.weight")
-        if "linear.bias" in st:
-            st["bias"] = st.pop("linear.bias")
+            # Normalize key names if needed
+            if "linear.weight" in st:
+                st["weight"] = st.pop("linear.weight")
+            if "linear.bias" in st:
+                st["bias"] = st.pop("linear.bias")
 
-        # Ensure weights are compute dtype
-        lin.load_state_dict(st, strict=True)
+            # Ensure weights are compute dtype
+            lin.load_state_dict(st, strict=True)
+        else:
+            # Initialize weights
+            nn.init.xavier_uniform_(lin.weight)
+            if lin.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
+                nn.init.zeros_(lin.bias)
 
         act = cfg.get("activation_function", None)
         if "Tanh" in act:
@@ -345,6 +368,10 @@ class TextEncoder(nn.Module):
                     param.requires_grad = False
 
     def get_embeddings(self, inputs: dict[str, Tensor], *, normalize: bool = False) -> Tensor:
+        assert self.config.model_name in ("google/embeddinggemma-300m", "baai/bge-m3", "qwen/qwen3-embedding-0.6b", "intfloat/multilingual-e5-base", "intfloat/multilingual-e5-large"), (
+            "get_embeddings currently only supports 'google/embeddinggemma-300m', 'baai/bge-m3', 'qwen/qwen3-embedding-0.6b', 'intfloat/multilingual-e5-base' and 'intfloat/multilingual-e5-large' models."
+        )
+
         # forward Pass
         outputs = self.encoder(**inputs)
 
@@ -385,7 +412,7 @@ class TextEncoder(nn.Module):
             return last_hidden_state
 
         assert self.config.model_name == "google/embeddinggemma-300m", (
-            "get_embeddings currently only supports 'google/embeddinggemma-300m' and 'baai/bge-m3' models."
+            "Only 'google/embeddinggemma-300m' model reaches this point."
         )
 
         # We must mask out padding tokens so they don't affect the average
