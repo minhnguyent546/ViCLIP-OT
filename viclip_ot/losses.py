@@ -458,12 +458,12 @@ class BatchLevelEntropicOTLoss(nn.Module):
             #     reduction=("batchmean" if reduction == "mean" else reduction),
             #     log_target=False,
             # )
-            loss_t2i = Fun.kl_div(
-                log_transport_plan.T,
-                sim_matrix,
-                reduction=("batchmean" if reduction == "mean" else reduction),
-                log_target=False,
-            )
+            # loss_t2i = Fun.kl_div(
+            #     log_transport_plan.T,
+            #     sim_matrix,
+            #     reduction=("batchmean" if reduction == "mean" else reduction),
+            #     log_target=False,
+            # )
 
             #  Generalized KL Divergence
             loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
