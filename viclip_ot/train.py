@@ -155,7 +155,7 @@ def train_model(args: argparse.Namespace) -> None:
     logger.info(f"Determined model format: {model_fmt()}")
 
     # TODO: refactor
-    caption_embeddings = torch.load("uit_openviic_train_caption_embeddings", map_location="cpu")
+    caption_embeddings = torch.load("uit_openviic_train_caption_embeddings.pt", map_location="cpu")
 
     train_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,

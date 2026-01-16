@@ -86,7 +86,7 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
         captions_by_image_id: dict[int, list[tuple[int, str]]] = defaultdict(list)
         for annotation in self.metadata.annotations:
             image_id = annotation.image_id
-            if image_id not in captions_by_image_id:
+            if image_id not in self.id_to_image_path:
                 raise RuntimeError(
                     f"Could not find image with ID {image_id} for annotation {annotation.id}"
                 )
