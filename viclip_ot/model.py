@@ -213,6 +213,7 @@ class TextEncoder(nn.Module):
             _model_config = AutoConfig.from_pretrained(
                 self.config.model_name, trust_remote_code=True
             )
+            logger.info(f"Initializing TextEncoder {_model_config} from scratch.")
             self.encoder = AutoModel.from_config(_model_config, trust_remote_code=True)
 
         if self.config.model_name == "google/embeddinggemma-300m":
