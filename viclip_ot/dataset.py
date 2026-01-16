@@ -67,7 +67,7 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int]]):
         root_dir: str,
         metadata_json_file: str,
         image_transforms=None,
-        model_fmt: Literal["gemma", "e5", "qwen3", "bge"] = "gemma",
+        model_fmt: Literal["gemma", "e5", "qwen3", "bge", "sbert"] = "gemma",
     ) -> None:
         self.root_dir = root_dir
         self.metadata_file_path = os.path.join(self.root_dir, metadata_json_file)
@@ -150,10 +150,15 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int]]):
             # BGE does not require special formatting
             formatted_captions = [f"{caption}" for caption in captions]
 
+        elif self.model_fmt == "sbert":
+            # https://www.sbert.net/docs/usage/semantic_textual_similarity.html
+            # SBERT does not require special formatting
+            formatted_captions = [f"{caption}" for caption in captions]
+
         else:
             raise ValueError(
                 f"Invalid model_fmt: {self.model_fmt}. "
-                f"Expected one of ['gemma', 'e5', 'qwen3', 'bge']"
+                f"Expected one of ['gemma', 'e5', 'qwen3', 'bge', 'sbert']"
             )
 
         # Print first caption for debugging

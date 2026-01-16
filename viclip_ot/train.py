@@ -141,16 +141,18 @@ def train_model(args: argparse.Namespace) -> None:
         ]
     )
 
-    def model_fmt() -> Literal["gemma", "e5", "qwen3", "bge"]:
+    def model_fmt() -> Literal["gemma", "e5", "qwen3", "bge", "sbert"]:
         model_name = model_config.text_config.model_name
-        if "gemma" in model_name.lower():
+        if "gemma" in model_name.lower(): # google/embeddinggemma-300m
             return "gemma"
-        elif "e5" in model_name.lower():
+        elif "e5" in model_name.lower(): # intfloat/multilingual-e5-large
             return "e5"
-        elif "qwen" in model_name.lower():
+        elif "qwen" in model_name.lower(): # Qwen/Qwen3-Embedding-0.6B
             return "qwen3"
-        elif "bge" in model_name.lower():
+        elif "bge" in model_name.lower(): # BAAI/bge-m3
             return "bge"
+        elif "sbert" in model_name.lower(): # keepitreal/vietnamese-sbert
+            return "sbert"
         else:
             raise ValueError(f"Unsupported model name for determining model format: {model_name}")
 
