@@ -566,7 +566,7 @@ def train_model(args: argparse.Namespace) -> None:
                 ):
                     all_indices = torch.cat([batch["indices"] for batch in batches], dim=0)
                     sim_matrix = (
-                        caption_embeddings[all_indices] @ cached_features["image_features"].T
+                        caption_embeddings[all_indices] @ caption_embeddings[all_indices].T
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
