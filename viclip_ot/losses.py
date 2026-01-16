@@ -309,8 +309,9 @@ class BatchLevelEntropicOTLoss(nn.Module):
     Batch-level Entropic Optimal Transport Loss
     """
 
-    def __init__(self):
+    def __init__(self, sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn"):
         super().__init__()
+        self.sinkhorn_solver = sinkhorn_solver
 
     def get_logits(
         self,
@@ -354,6 +355,37 @@ class BatchLevelEntropicOTLoss(nn.Module):
 
         return transport_plan * batch_size  # pyright: ignore[reportReturnType]
 
+    def sinkhorn_unbalanced(
+        self,
+        metric_cost_matrix,
+        reg: float = 0.05,
+        reg_m: float = 0.5,
+        max_num_iters: int = 200,
+    ):
+        """
+        reg: Entropy regularization (smoothness)
+        reg_m: Marginal relaxation (how much we allow mass to deviate from 1/N)
+            Lower reg_m = looser constraints (ignores outliers more).
+        """
+        device = metric_cost_matrix.device
+        batch_size = metric_cost_matrix.shape[0]
+        a = torch.ones(batch_size, device=device) / batch_size
+        b = torch.ones(batch_size, device=device) / batch_size
+
+        # This solves the transport where rows/cols don't have to sum exactly to 1/N
+        transport_plan = ot.sinkhorn_unbalanced(
+            a,
+            b,
+            metric_cost_matrix,
+            reg=reg,
+            reg_m=reg_m,
+            reg_type="kl",
+            method="sinkhorn_stabilized",
+            numItermax=max_num_iters,
+        )
+
+        return transport_plan * batch_size  # pyright: ignore[reportReturnType]
+
     def forward(
         self,
         image_features: Tensor,
@@ -373,7 +405,21 @@ class BatchLevelEntropicOTLoss(nn.Module):
         # compute raw cosine similarity (without scaling and bias)
         raw_cosine_sim = image_features @ text_features.T
         cost_matrix = 1 - raw_cosine_sim  # values are in range [0, 2]
-        transport_plan = self.sinkhorn(cost_matrix)
+        if self.sinkhorn_solver == "sinkhorn":
+            transport_plan = self.sinkhorn(
+                metric_cost_matrix=cost_matrix,
+                reg=0.05,
+                max_num_iters=200,
+            )
+        elif self.sinkhorn_solver == "sinkhorn_unbalanced":
+            transport_plan = self.sinkhorn_unbalanced(
+                metric_cost_matrix=cost_matrix,
+                reg=0.05,
+                reg_m=0.5,
+                max_num_iters=200,
+            )
+        else:
+            raise ValueError(f"Unsupported solver: {self.sinkhorn_solver}")
 
         # since t_plan are probabilities (0 to 1), we use NLLLoss on log(plan)
         log_transport_plan = torch.log(transport_plan + 1e-8)
@@ -427,7 +473,12 @@ class HybridClipTPLoss(nn.Module):
     Combines CLIP loss with Batch-level Entropic Optimal Transport Loss.
     """
 
-    def __init__(self, ot_start_epoch: int, ot_loss_lambda: float = 1.0):
+    def __init__(
+        self,
+        ot_start_epoch: int,
+        ot_loss_lambda: float = 1.0,
+        sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
+    ):
         """
         Args:
             ot_start_epoch (int): Epoch to start applying the OT loss (0-based).
@@ -439,7 +490,7 @@ class HybridClipTPLoss(nn.Module):
         self.ot_loss_lambda = ot_loss_lambda
 
         self.clip_loss = ClipLoss()
-        self.ot_loss = BatchLevelEntropicOTLoss()
+        self.ot_loss = BatchLevelEntropicOTLoss(sinkhorn_solver=sinkhorn_solver)
 
     def forward(
         self,

@@ -74,7 +74,7 @@ def train_model(args: argparse.Namespace) -> None:
     elif args.criterion == "sig_lip_loss":
         criterion = losses.SigLipLoss()
     elif args.criterion == "batch_level_entropic_ot_loss":
-        criterion = losses.BatchLevelEntropicOTLoss()
+        criterion = losses.BatchLevelEntropicOTLoss(sinkhorn_solver=args.sinkhorn_solver)
     elif args.criterion == "hybrid_clip_tp_loss":
         if (
             args.hybrid_clip_tp_loss_start_epoch < 1
@@ -85,6 +85,7 @@ def train_model(args: argparse.Namespace) -> None:
                 f"It should be in the range [1, {args.num_epochs}]"
             )
         criterion = losses.HybridClipTPLoss(
+            sinkhorn_solver=args.sinkhorn_solver,
             ot_start_epoch=args.hybrid_clip_tp_loss_start_epoch - 1,  # convert to 0-based
             ot_loss_lambda=args.hybrid_clip_tp_loss_ot_loss_lambda,
         )

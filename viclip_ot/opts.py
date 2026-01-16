@@ -117,6 +117,16 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default="clip_loss",
     )
     group.add_argument(
+        "--sinkhorn_solver",
+        type=str,
+        help="Sinkhorn solver to use for OT losses",
+        choices=[
+            "sinkhorn",
+            "sinkhorn_unbalanced",
+        ],
+        default="sinkhorn",
+    )
+    group.add_argument(
         "--hybrid_clip_tp_loss_start_epoch",
         type=int,
         help="Epoch to start applying OT loss in HybridClipTPLoss (1-based)",
