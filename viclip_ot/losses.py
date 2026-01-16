@@ -1,5 +1,6 @@
 from typing import Literal
 
+import ot
 import torch
 import torch.nn as nn
 import torch.nn.functional as Fun
@@ -330,31 +331,31 @@ class BatchLevelEntropicOTLoss(nn.Module):
 
         return logits_per_image.to(original_dtype), logits_per_text.to(original_dtype)
 
-    # def sinkhorn_unbalanced(
-    #     self,
-    #     metric_cost_matrix: Tensor,
-    #     reg: float = 0.1,
-    #     reg_m: float = 0.1,
-    #     max_num_iters: int = 1000,
-    # ) -> Tensor:
-    #     """Solve the unbalanced entropic regularization optimal transport problem and return the OT plan."""
-    #     device = metric_cost_matrix.device
-    #     batch_size = metric_cost_matrix.shape[0]
-    #     a = torch.ones((batch_size,), device=device)
-    #     b = torch.ones((batch_size,), device=device) / batch_size
+    def sinkhorn_unbalanced(
+        self,
+        metric_cost_matrix: Tensor,
+        reg: float = 0.1,
+        reg_m: float = 0.1,
+        max_num_iters: int = 1000,
+    ) -> Tensor:
+        """Solve the unbalanced entropic regularization optimal transport problem and return the OT plan."""
+        device = metric_cost_matrix.device
+        batch_size = metric_cost_matrix.shape[0]
+        a = torch.ones((batch_size,), device=device)
+        b = torch.ones((batch_size,), device=device) / batch_size
 
-    #     transport_plan = ot.sinkhorn_unbalanced(
-    #         a=a,
-    #         b=b,
-    #         M=metric_cost_matrix,
-    #         reg=reg,
-    #         reg_m=reg_m,
-    #         method="sinkhorn_stabilized",
-    #         numItermax=max_num_iters,
-    #         stopThr=1e-6,
-    #     )
+        transport_plan = ot.sinkhorn_unbalanced(
+            a=a,
+            b=b,
+            M=metric_cost_matrix,
+            reg=reg,
+            reg_m=reg_m,
+            method="sinkhorn_stabilized",
+            numItermax=max_num_iters,
+            stopThr=1e-6,
+        )
 
-    #     return transport_plan
+        return transport_plan
 
     def entropic_ot(self, metric_cost_matrix, reg=0.01, n=5):
         """
@@ -413,10 +414,14 @@ class BatchLevelEntropicOTLoss(nn.Module):
             labels = torch.arange(logits_per_image.shape[0], device=device, dtype=torch.int64)
 
             loss_i2t = Fun.cross_entropy(
-                input=self.entropic_ot(1.0 - logits_per_image), target=labels, reduction=reduction
+                input=self.sinkhorn_unbalanced(1.0 - logits_per_image),
+                target=labels,
+                reduction=reduction,
             )
             loss_t2i = Fun.cross_entropy(
-                input=self.entropic_ot(1.0 - logits_per_text), target=labels, reduction=reduction
+                input=self.sinkhorn_unbalanced(1.0 - logits_per_text),
+                target=labels,
+                reduction=reduction,
             )
         else:
             image_ids = image_ids.to(device)
@@ -427,10 +432,10 @@ class BatchLevelEntropicOTLoss(nn.Module):
             soft_labels = matches.float()
             soft_labels = soft_labels / soft_labels.sum(dim=1, keepdim=True)
             loss_i2t = Fun.cross_entropy(
-                self.entropic_ot(1.0 - logits_per_image), soft_labels, reduction=reduction
+                self.sinkhorn_unbalanced(1.0 - logits_per_image), soft_labels, reduction=reduction
             )
             loss_t2i = Fun.cross_entropy(
-                self.entropic_ot(1.0 - logits_per_text), soft_labels, reduction=reduction
+                self.sinkhorn_unbalanced(1.0 - logits_per_text), soft_labels, reduction=reduction
             )
 
         total_loss = (loss_i2t + loss_t2i) / 2
