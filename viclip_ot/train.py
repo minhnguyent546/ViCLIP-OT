@@ -2,6 +2,7 @@ import argparse
 import os
 import time
 from datetime import datetime
+from functools import partial
 from typing import Literal
 
 import torch
@@ -74,6 +75,19 @@ def train_model(args: argparse.Namespace) -> None:
         criterion = losses.SigLipLoss()
     elif args.criterion == "batch_level_entropic_ot_loss":
         criterion = losses.BatchLevelEntropicOTLoss()
+    elif args.criterion == "hybrid_clip_tp_loss":
+        if (
+            args.hybrid_clip_tp_loss_start_epoch < 1
+            or args.hybrid_clip_tp_loss_start_epoch > args.num_epochs
+        ):
+            raise ValueError(
+                f"Invalid hybrid_clip_tp_loss_start_epoch: {args.hybrid_clip_tp_loss_start_epoch}. "
+                f"It should be in the range [1, {args.num_epochs}]"
+            )
+        criterion = losses.HybridClipTPLoss(
+            ot_start_epoch=args.hybrid_clip_tp_loss_start_epoch - 1,  # convert to 0-based
+            ot_loss_lambda=args.ot_loss_lambda,
+        )
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
 
@@ -455,6 +469,9 @@ def train_model(args: argparse.Namespace) -> None:
     training_start_time = time.perf_counter()
     for epoch in range(args.num_epochs):
         model.train()
+        criterion_kwargs = {}
+        if isinstance(criterion, losses.HybridClipTPLoss):
+            criterion_kwargs["epoch"] = epoch
 
         train_data_iter = iter(train_data_loader)
         total_num_samples = len(train_data_loader)
@@ -505,6 +522,7 @@ def train_model(args: argparse.Namespace) -> None:
                         logit_bias=model_outputs.get("logit_bias", None),
                         image_ids=image_ids,
                         reduction="sum",
+                        **criterion_kwargs,
                     )
                     if num_items_in_batch > 0:
                         loss = loss / num_items_in_batch
@@ -561,6 +579,7 @@ def train_model(args: argparse.Namespace) -> None:
                                 ]
                             ),
                             reduction="sum",
+                            **criterion_kwargs,
                         )
                         del outputs_for_loss
                         del outputs_no_cached
@@ -658,7 +677,7 @@ def train_model(args: argparse.Namespace) -> None:
         # validation
         val_results = eval_model(
             model=model,
-            criterion=criterion,
+            criterion=partial(criterion, **criterion_kwargs),
             eval_data_loader=val_data_loader,
             device=device,
         )
