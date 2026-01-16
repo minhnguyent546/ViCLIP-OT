@@ -108,6 +108,12 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
         # sort by image_id
         self.samples.sort(key=lambda x: x[0])  # sort by image_id
 
+    def get_caption_ids(self, indices: list[int]) -> list[int]:
+        caption_ids: list[int] = []
+        for idx in indices:
+            caption_ids.extend(self.caption_ids_list[idx])
+        return caption_ids
+
     def __len__(self):
         return len(self.samples)
 
@@ -187,7 +193,6 @@ class ImageTextCollate:
 
         images = torch.stack(images)
         image_ids = torch.tensor(image_ids, dtype=torch.int64)
-        indices = torch.tensor(indices, dtype=torch.int64)
 
         if self.caption_to_use == "first":
             captions = [caption[0] for caption in captions]

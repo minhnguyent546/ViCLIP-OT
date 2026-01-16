@@ -521,8 +521,9 @@ def train_model(args: argparse.Namespace) -> None:
                     criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
                 ):
                     sample_indices = batches[0]["indices"]
+                    caption_ids = train_data_loader.dataset.get_caption_ids(sample_indices)
                     sim_matrix = (
-                        caption_embeddings[sample_indices] @ caption_embeddings[sample_indices].T
+                        caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].T
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
@@ -564,9 +565,10 @@ def train_model(args: argparse.Namespace) -> None:
                 if isinstance(
                     criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
                 ):
-                    all_indices = torch.cat([batch["indices"] for batch in batches], dim=0)
+                    all_indices = [idx for batch in batches for idx in batch["indices"]]
+                    caption_ids = train_data_loader.dataset.get_caption_ids(all_indices)
                     sim_matrix = (
-                        caption_embeddings[all_indices] @ caption_embeddings[all_indices].T
+                        caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].T
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
