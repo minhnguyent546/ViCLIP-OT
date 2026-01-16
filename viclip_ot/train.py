@@ -2,7 +2,6 @@ import argparse
 import os
 import time
 from datetime import datetime
-from functools import partial
 from typing import Literal
 
 import torch
@@ -77,7 +76,7 @@ def train_model(args: argparse.Namespace) -> None:
         # criterion = losses.HybridClipTPLoss()
         raise NotImplementedError("Entropic OT loss is not implemented yet.")
     elif args.criterion == "batch_level_entropic_ot_loss":
-        criterion = losses.BatchLevelEntropicOTLoss()
+        criterion = losses.BatchLevelEntropicOTLoss(sinkhorn_solver=args.sinkhorn_solver)
     elif args.criterion == "hybrid_clip_tp_loss":
         if (
             args.hybrid_clip_tp_loss_start_epoch < 1
@@ -88,11 +87,13 @@ def train_model(args: argparse.Namespace) -> None:
                 f"It should be in the range [1, {args.num_epochs}]"
             )
         criterion = losses.HybridClipTPLoss(
+            sinkhorn_solver=args.sinkhorn_solver,
             ot_start_epoch=args.hybrid_clip_tp_loss_start_epoch - 1,  # convert to 0-based
-            ot_loss_lambda=args.ot_loss_lambda,
+            ot_loss_lambda=args.hybrid_clip_tp_loss_ot_loss_lambda,
         )
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
+    eval_criterion = losses.ClipLoss()
 
     if args.linear_probing:
         raise NotImplementedError("Loading from checkpoint is not implemented yet.")
@@ -157,6 +158,11 @@ def train_model(args: argparse.Namespace) -> None:
             raise ValueError(f"Unsupported model name for determining model format: {model_name}")
 
     logger.info(f"Determined model format: {model_fmt()}")
+
+    # TODO: refactor me!!!
+    caption_embeddings = torch.load(
+        "uit_openviic_train_caption_embeddings.pt", map_location=device
+    )
 
     train_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
@@ -518,6 +524,16 @@ def train_model(args: argparse.Namespace) -> None:
                 text_inputs = batches[0]["text_inputs"].to(device=device, non_blocking=True)
                 image_ids = batches[0]["image_ids"]
 
+                if isinstance(
+                    criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                ):
+                    sample_indices = batches[0]["indices"]
+                    caption_ids = train_data_loader.dataset.get_caption_ids(sample_indices)  # pyright: ignore
+                    sim_matrix = (
+                        caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].T
+                    )
+                    criterion_kwargs["sim_matrix"] = sim_matrix
+
                 with autocast_context:
                     model_outputs = model(images, text_inputs)
                     loss = criterion(
@@ -552,6 +568,17 @@ def train_model(args: argparse.Namespace) -> None:
                                 cached_features[key].append(value)
 
                 all_image_ids = torch.cat([batch["image_ids"] for batch in batches], dim=0)
+
+                if isinstance(
+                    criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                ):
+                    all_indices = [idx for batch in batches for idx in batch["indices"]]
+                    caption_ids = train_data_loader.dataset.get_caption_ids(all_indices)  # pyright: ignore
+                    sim_matrix = (
+                        caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].T
+                    )
+                    criterion_kwargs["sim_matrix"] = sim_matrix
+
                 accum_num_samples = 0
                 # step 2: re-do the forward pass for those batches, and use the cache features
                 for batch_idx, batch in enumerate(batches):
@@ -682,7 +709,7 @@ def train_model(args: argparse.Namespace) -> None:
         # validation
         val_results = eval_model(
             model=model,
-            criterion=partial(criterion, **criterion_kwargs),
+            criterion=eval_criterion,
             eval_data_loader=val_data_loader,
             device=device,
         )
@@ -699,7 +726,7 @@ def train_model(args: argparse.Namespace) -> None:
         # testing
         test_results = eval_model(
             model=model,
-            criterion=criterion,
+            criterion=eval_criterion,
             eval_data_loader=test_data_loader,
             device=device,
         )

@@ -29,7 +29,7 @@ class ImageTextData(BaseModel):
     annotations: list[ImageTextDataAnnotation]
 
 
-class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int]]):
+class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]):
     """
     Dataset structure:
 
@@ -83,27 +83,39 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int]]):
         )
         self.id_to_image_path = {image.id: image.image_path for image in self.metadata.images}
 
-        captions_by_image_id = defaultdict(list)
+        captions_by_image_id: dict[int, list[tuple[int, str]]] = defaultdict(list)
         for annotation in self.metadata.annotations:
             image_id = annotation.image_id
-            if image_id in self.id_to_image_path:
-                captions_by_image_id[image_id].append(annotation.caption)
-            else:
-                logger.warning(
+            if image_id not in self.id_to_image_path:
+                raise RuntimeError(
                     f"Could not find image with ID {image_id} for annotation {annotation.id}"
                 )
 
-        self.samples = [
-            (os.path.join(self.root_dir, self.id_to_image_path[image_id]), captions, image_id)
-            for image_id, captions in captions_by_image_id.items()
-        ]
-        logger.info(f"Total (image, texts) pairs: {len(self.samples)}")
+            captions_by_image_id[image_id].append((annotation.id, annotation.caption))
+
+        self.caption_ids_list: list[list[int]] = []
+        self.samples: list[tuple[int, str, list[str]]] = []
+        pair_count = 0
+        for image_id in sorted(captions_by_image_id.keys()):
+            captions_by_image_id[image_id].sort(key=lambda x: x[0])  # sort by caption_id
+            captions = [caption for _caption_id, caption in captions_by_image_id[image_id]]
+            image_path = os.path.join(self.root_dir, self.id_to_image_path[image_id])
+            self.samples.append((image_id, image_path, captions))
+
+            self.caption_ids_list.append(list(range(pair_count, pair_count + len(captions))))
+            pair_count += len(captions)
+
+    def get_caption_ids(self, indices: list[int]) -> list[int]:
+        caption_ids: list[int] = []
+        for idx in indices:
+            caption_ids.extend(self.caption_ids_list[idx])
+        return caption_ids
 
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx) -> tuple[Image.Image | Tensor, list[str], int]:
-        image_path, captions, image_id = self.samples[idx]
+    def __getitem__(self, idx) -> tuple[Image.Image | Tensor, list[str], int, int]:
+        image_id, image_path, captions = self.samples[idx]
 
         try:
             image = Image.open(image_path)
@@ -164,7 +176,7 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int]]):
         # Print first caption for debugging
         # logger.debug(f"Image ID {image_id} first caption: {formatted_captions[0]}")
 
-        return image, formatted_captions, int(image_id)
+        return image, formatted_captions, int(image_id), idx
 
 
 class ImageTextCollate:
@@ -179,7 +191,7 @@ class ImageTextCollate:
         self.caption_to_use = caption_to_use
 
     def __call__(self, batch):
-        images, captions, image_ids = zip(*batch, strict=True)
+        images, captions, image_ids, indices = zip(*batch, strict=True)
 
         images = torch.stack(images)
         image_ids = torch.tensor(image_ids, dtype=torch.int64)
@@ -218,4 +230,5 @@ class ImageTextCollate:
             "images": images,
             "text_inputs": text_inputs,
             "image_ids": image_ids,
+            "indices": indices,
         }
