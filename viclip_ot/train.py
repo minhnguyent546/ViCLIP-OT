@@ -154,8 +154,10 @@ def train_model(args: argparse.Namespace) -> None:
 
     logger.info(f"Determined model format: {model_fmt()}")
 
-    # TODO: refactor
-    caption_embeddings = torch.load("uit_openviic_train_caption_embeddings.pt", map_location="cpu")
+    # TODO: refactor me!!!
+    caption_embeddings = torch.load(
+        "uit_openviic_train_caption_embeddings.pt", map_location=device
+    )
 
     train_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
@@ -521,7 +523,7 @@ def train_model(args: argparse.Namespace) -> None:
                     criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
                 ):
                     sample_indices = batches[0]["indices"]
-                    caption_ids = train_data_loader.dataset.get_caption_ids(sample_indices)
+                    caption_ids = train_data_loader.dataset.get_caption_ids(sample_indices)  # pyright: ignore
                     sim_matrix = (
                         caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].T
                     )
@@ -566,7 +568,7 @@ def train_model(args: argparse.Namespace) -> None:
                     criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
                 ):
                     all_indices = [idx for batch in batches for idx in batch["indices"]]
-                    caption_ids = train_data_loader.dataset.get_caption_ids(all_indices)
+                    caption_ids = train_data_loader.dataset.get_caption_ids(all_indices)  # pyright: ignore
                     sim_matrix = (
                         caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].T
                     )

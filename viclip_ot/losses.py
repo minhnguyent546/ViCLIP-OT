@@ -391,6 +391,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         self,
         image_features: Tensor,
         text_features: Tensor,
+        logit_scale: Tensor,
         sim_matrix: Tensor,
         output_dict: bool = False,
         reduction: str = "mean",
@@ -437,6 +438,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         # )
 
         #  Generalized KL Divergence
+        sim_matrix = (logit_scale * sim_matrix).softmax(dim=1) * batch_size
         loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
         loss_t2i = (
             transport_plan.T * (transport_plan.T.log() - sim_matrix.T.log() - 1) + sim_matrix.T
@@ -510,6 +512,7 @@ class HybridClipTPLoss(nn.Module):
                 image_features=image_features,
                 text_features=text_features,
                 sim_matrix=sim_matrix,
+                logit_scale=logit_scale,
                 output_dict=False,
                 reduction=reduction,
             )
