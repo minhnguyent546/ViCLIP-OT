@@ -47,7 +47,16 @@ class ViCLIPOTConfig(BaseModel):
     image_config: ViCLIPOTImageConfig
     text_config: ViCLIPOTTextConfig
     embed_dim: int
-    logit_scale: float = np.log(1 / 0.07)
+
+    # `initial_temperature` is used for initializing the `logit_scale` parameter (a learnable parameter)
+    # and computed as:
+    # ```python
+    # logit_scale = nn.Parameter(torch.tensor(np.log(1 / initial_temperature), dtype=torch.float32))
+    # ````
+    # Recommended value:
+    # - initial_temperature = 0.07 and logit_bias = None for CLIP loss
+    # - initial_temperature = 0.1 and logit_bias = -10 for SigLIP loss
+    initial_temperature: float = 0.07
     logit_bias: float | None = None
 
 
@@ -478,7 +487,9 @@ class ViCLIPOT(nn.Module):
             embed_dim=config.embed_dim,
         )
         self.text_encoder = TextEncoder(config=config.text_config, embed_dim=config.embed_dim)
-        self.logit_scale = nn.Parameter(torch.tensor(config.logit_scale, dtype=torch.float32))
+        self.logit_scale = nn.Parameter(
+            torch.tensor(np.log(1 / config.initial_temperature), dtype=torch.float32)
+        )
         self.logit_bias = None
         if config.logit_bias is not None:
             self.logit_bias = nn.Parameter(torch.tensor(config.logit_bias, dtype=torch.float32))

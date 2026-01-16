@@ -616,6 +616,8 @@ def train_model(args: argparse.Namespace) -> None:
                 log_data["train/loss"] = batch_loss
                 log_data["train/grad_norm"] = grad_norm_value
                 log_data["train/logit_scale"] = model.logit_scale.exp().item()
+                if model.logit_bias is not None:
+                    log_data["train/logit_bias"] = model.logit_bias.item()
                 wandb_run.log(log_data, step=global_step)
 
             if (epoch <= args.lr_warmup_epochs - 1) and (warmup_lr_scheduler is not None):
