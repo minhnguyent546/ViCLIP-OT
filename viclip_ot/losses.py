@@ -331,32 +331,6 @@ class BatchLevelEntropicOTLoss(nn.Module):
 
         return logits_per_image.to(original_dtype), logits_per_text.to(original_dtype)
 
-    def sinkhorn_unbalanced(
-        self,
-        metric_cost_matrix: Tensor,
-        reg: float = 0.1,
-        reg_m: float = 0.1,
-        max_num_iters: int = 1000,
-    ) -> Tensor:
-        """Solve the unbalanced entropic regularization optimal transport problem and return the OT plan."""
-        device = metric_cost_matrix.device
-        batch_size = metric_cost_matrix.shape[0]
-        a = torch.ones((batch_size,), device=device)
-        b = torch.ones((batch_size,), device=device) / batch_size
-
-        transport_plan = ot.sinkhorn_unbalanced(
-            a=a,
-            b=b,
-            M=metric_cost_matrix,
-            reg=reg,
-            reg_m=reg_m,
-            method="sinkhorn_stabilized",
-            numItermax=max_num_iters,
-            stopThr=1e-6,
-        )
-
-        return transport_plan
-
     def sinkhorn(
         self,
         metric_cost_matrix: Tensor,
@@ -376,74 +350,9 @@ class BatchLevelEntropicOTLoss(nn.Module):
             reg=reg,
             method="sinkhorn_log",
             numItermax=max_num_iters,
-            # stopThr=1e-5,
         )
 
         return transport_plan * batch_size  # pyright: ignore[reportReturnType]
-
-    def hicolt_ot(
-        self,
-        M: Tensor,
-        reg: float = 0.05,
-        stopThr: float = 1e-4,
-        max_num_iters: int = 1000,
-        epsilon=1e-6,
-    ) -> Tensor:
-        device = M.device
-        # Sinkhorn's algorithm
-        a = (M.sum(dim=1)).unsqueeze(1).to(device)
-        b = (M.sum(dim=0)).unsqueeze(1).to(device)
-
-        u = (torch.ones_like(a) / a.size()[0]).to(device)
-
-        K = torch.exp(-M / reg).clamp(min=1e-6)
-        err = 1
-        cpt = 0
-        v = None
-        while err > stopThr and cpt < max_num_iters:
-            v = torch.div(b, torch.matmul(K.t(), u) + epsilon)
-            u = torch.div(a, torch.matmul(K, v) + epsilon)
-            cpt += 1
-            if cpt % 50 == 1:
-                bb = torch.mul(v, torch.matmul(K.t(), u))
-                err = torch.norm(torch.sum(torch.abs(bb - b), dim=0), p=float("inf"))
-
-        assert v is not None
-        transport_plan = u * (K * v.T)
-        transport_plan = transport_plan.clamp(min=1e-4)
-
-        return transport_plan
-
-    def entropic_ot(self, metric_cost_matrix, reg=0.01, n=5):
-        """
-        Adapted from: https://github.com/fan23j/ICML2024-OT-CLIP/blob/main/training/loss.py#L5
-        metric_cost_matrix: metric cost matrix
-        reg: regularization parameter > 0
-        n: number of iterations
-        """
-        device = metric_cost_matrix.device
-        a = torch.ones(metric_cost_matrix.shape[0], device=device)
-        b = torch.ones(metric_cost_matrix.shape[0], device=device) / metric_cost_matrix.shape[0]
-
-        # initialize u and v as uniform distributions
-        u = torch.ones(a.shape[0], device=device) / a.shape[0]
-        v = torch.ones(b.shape[0], device=device) / b.shape[0]
-
-        # compute kernel K using the negative cost matrix scaled by the regularization term
-        K = torch.exp(-metric_cost_matrix / reg)
-        # pre-compute the row normalization factor
-        Kp = (1.0 / a).reshape(-1, 1) * K
-
-        # iteratively update u and v using Sinkhorn algorithm
-        for _ in range(n):
-            # compute the matrix-vector product of K transposed and u
-            KtransposeU = K.t() @ u
-            # update v based on the current u
-            v = b / KtransposeU
-            # update u using the new v and precomputed Kp
-            u = 1.0 / Kp @ v
-
-        return u.reshape((-1, 1)) * K * v.reshape((-1, 1))
 
     def forward(
         self,
@@ -460,12 +369,6 @@ class BatchLevelEntropicOTLoss(nn.Module):
         """
         device = image_features.device
         batch_size = image_features.shape[0]
-        # logits_per_image, logits_per_text = self.get_logits(
-        #     image_features,
-        #     text_features,
-        #     logit_scale,
-        #     logit_bias=logit_bias,
-        # )
 
         # compute raw cosine similarity (without scaling and bias)
         raw_cosine_sim = image_features @ text_features.T
@@ -513,12 +416,6 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 reduction=("batchmean" if reduction == "mean" else reduction),
                 log_target=False,
             )
-            # loss_i2t = Fun.cross_entropy(
-            #     self.sinkhorn(1.0 - logits_per_image), soft_labels, reduction=reduction
-            # )
-            # loss_t2i = Fun.cross_entropy(
-            #     self.sinkhorn(1.0 - logits_per_text), soft_labels, reduction=reduction
-            # )
 
         total_loss = (loss_i2t + loss_t2i) / 2
 
