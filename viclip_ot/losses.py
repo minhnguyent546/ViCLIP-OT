@@ -357,11 +357,35 @@ class BatchLevelEntropicOTLoss(nn.Module):
 
         return transport_plan
 
+    def sinkhorn(
+        self,
+        metric_cost_matrix: Tensor,
+        reg: float = 0.1,
+        max_num_iters: int = 200,
+    ) -> Tensor:
+        """Solve the unbalanced entropic regularization optimal transport problem and return the OT plan."""
+        device = metric_cost_matrix.device
+        batch_size = metric_cost_matrix.shape[0]
+        a = torch.ones((batch_size,), device=device) / batch_size
+        b = torch.ones((batch_size,), device=device) / batch_size
+
+        transport_plan = ot.sinkhorn(
+            a=a,
+            b=b,
+            M=metric_cost_matrix,
+            reg=reg,
+            method="sinkhorn_log",
+            numItermax=max_num_iters,
+            # stopThr=1e-5,
+        )
+
+        return transport_plan * batch_size  # pyright: ignore[reportReturnType]
+
     def hicolt_ot(
         self,
         M: Tensor,
-        reg: float = 0.1,
-        stopThr: float = 1e-5,
+        reg: float = 0.05,
+        stopThr: float = 1e-4,
         max_num_iters: int = 1000,
         epsilon=1e-6,
     ) -> Tensor:
@@ -375,6 +399,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         K = torch.exp(-M / reg).clamp(min=1e-6)
         err = 1
         cpt = 0
+        v = None
         while err > stopThr and cpt < max_num_iters:
             v = torch.div(b, torch.matmul(K.t(), u) + epsilon)
             u = torch.div(a, torch.matmul(K, v) + epsilon)
@@ -383,6 +408,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 bb = torch.mul(v, torch.matmul(K.t(), u))
                 err = torch.norm(torch.sum(torch.abs(bb - b), dim=0), p=float("inf"))
 
+        assert v is not None
         transport_plan = u * (K * v.T)
         transport_plan = transport_plan.clamp(min=1e-4)
 
@@ -433,24 +459,33 @@ class BatchLevelEntropicOTLoss(nn.Module):
         If `image_ids` is provided, the computation will take into account image with multiple captions.
         """
         device = image_features.device
-        logits_per_image, logits_per_text = self.get_logits(
-            image_features,
-            text_features,
-            logit_scale,
-            logit_bias=logit_bias,
-        )
+        batch_size = image_features.shape[0]
+        # logits_per_image, logits_per_text = self.get_logits(
+        #     image_features,
+        #     text_features,
+        #     logit_scale,
+        #     logit_bias=logit_bias,
+        # )
+
+        # compute raw cosine similarity (without scaling and bias)
+        raw_cosine_sim = image_features @ text_features.T
+        cost_matrix = 1 - raw_cosine_sim  # values are in range [0, 2]
+        transport_plan = self.sinkhorn(cost_matrix)
+
+        # since t_plan are probabilities (0 to 1), we use NLLLoss on log(plan)
+        log_transport_plan = torch.log(transport_plan + 1e-8)
 
         if image_ids is None:
             # 1-1 matching between image and text
-            labels = torch.arange(logits_per_image.shape[0], device=device, dtype=torch.int64)
+            labels = torch.arange(batch_size, device=device, dtype=torch.int64)
 
-            loss_i2t = Fun.cross_entropy(
-                input=self.hicolt_ot(1.0 - logits_per_image),
+            loss_i2t = Fun.nll_loss(
+                input=log_transport_plan,
                 target=labels,
                 reduction=reduction,
             )
-            loss_t2i = Fun.cross_entropy(
-                input=self.hicolt_ot(1.0 - logits_per_text),
+            loss_t2i = Fun.nll_loss(
+                input=log_transport_plan.T,
                 target=labels,
                 reduction=reduction,
             )
@@ -462,12 +497,28 @@ class BatchLevelEntropicOTLoss(nn.Module):
             # create soft labels (probs)
             soft_labels = matches.float()
             soft_labels = soft_labels / soft_labels.sum(dim=1, keepdim=True)
-            loss_i2t = Fun.cross_entropy(
-                self.hicolt_ot(1.0 - logits_per_image), soft_labels, reduction=reduction
+
+            # Use KL Divergence for soft labels
+            # KL(target || input) = sum(target * (log(target) - input))
+            # Here input is log_plan.
+            loss_i2t = Fun.kl_div(
+                log_transport_plan,
+                soft_labels,
+                reduction=("batchmean" if reduction == "mean" else reduction),
+                log_target=False,
             )
-            loss_t2i = Fun.cross_entropy(
-                self.hicolt_ot(1.0 - logits_per_text), soft_labels, reduction=reduction
+            loss_t2i = Fun.kl_div(
+                log_transport_plan.T,
+                soft_labels,
+                reduction=("batchmean" if reduction == "mean" else reduction),
+                log_target=False,
             )
+            # loss_i2t = Fun.cross_entropy(
+            #     self.sinkhorn(1.0 - logits_per_image), soft_labels, reduction=reduction
+            # )
+            # loss_t2i = Fun.cross_entropy(
+            #     self.sinkhorn(1.0 - logits_per_text), soft_labels, reduction=reduction
+            # )
 
         total_loss = (loss_i2t + loss_t2i) / 2
 
@@ -476,20 +527,56 @@ class BatchLevelEntropicOTLoss(nn.Module):
 
 class HybridClipTPLoss(nn.Module):
     """
-    Hybrid loss
+    Combines CLIP loss with Batch-level Entropic Optimal Transport Loss.
     """
 
-    def __init__(self):
+    def __init__(self, ot_start_epoch: int, ot_loss_lambda: float = 1.0):
+        """
+        Args:
+            ot_start_epoch (int): Epoch to start applying the OT loss (0-based).
+            ot_loss_lambda (float): Weighting factor for the OT loss component (`total_loss = clip_loss + lambda * ot_loss`).
+        """
         super().__init__()
+
+        self.ot_start_epoch = ot_start_epoch
+        self.ot_loss_lambda = ot_loss_lambda
+
+        self.clip_loss = ClipLoss()
+        self.ot_loss = BatchLevelEntropicOTLoss()
 
     def forward(
         self,
         image_features: Tensor,
         text_features: Tensor,
         logit_scale: Tensor,
+        epoch: int,
         logit_bias: Tensor | None = None,
         image_ids: Tensor | None = None,
         output_dict: bool = False,
         reduction: str = "mean",
     ):
-        raise NotImplementedError("HybridClipTPLoss is not yet implemented.")
+        clip_loss_value = self.clip_loss(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            logit_bias=logit_bias,
+            image_ids=image_ids,
+            output_dict=False,
+            reduction=reduction,
+        )
+
+        if self.ot_start_epoch >= 0 and epoch >= self.ot_start_epoch:
+            ot_loss_value = self.ot_loss(
+                image_features=image_features,
+                text_features=text_features,
+                logit_scale=logit_scale,
+                logit_bias=logit_bias,
+                image_ids=image_ids,
+                output_dict=False,
+                reduction=reduction,
+            )
+            total_loss = clip_loss_value + self.ot_loss_lambda * ot_loss_value
+        else:
+            total_loss = clip_loss_value
+
+        return {"loss": total_loss} if output_dict else total_loss

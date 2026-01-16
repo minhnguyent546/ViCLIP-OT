@@ -108,15 +108,26 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         "--criterion",
         type=str,
         help="Which loss criterion to use",
-        choices=["clip_loss", "sig_lip_loss", "batch_level_entropic_ot_loss"],
+        choices=[
+            "clip_loss",
+            "sig_lip_loss",
+            "batch_level_entropic_ot_loss",
+            "hybrid_clip_tp_loss",
+        ],
         default="clip_loss",
+    )
+    group.add_argument(
+        "--hybrid_clip_tp_loss_start_epoch",
+        type=int,
+        help="Epoch to start applying OT loss in HybridClipTPLoss (1-based)",
+        default=25,
     )
 
     group.add_argument(
         "--num_epochs",
         type=int,
         help="Number of training epochs",
-        default=10,
+        default=30,
     )
     group.add_argument(
         "--label_smoothing",
