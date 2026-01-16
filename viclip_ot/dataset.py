@@ -125,20 +125,25 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int]]):
         if self.model_fmt == "gemma":
             # https://huggingface.co/google/embeddinggemma-300m#prompt-instructions
             # TODO: this prompt is for encode document, consider supporting encode for query.
-            formatted_captions = [f"sentence similarity | query: {caption}" for caption in captions]
+            formatted_captions = [
+                f"sentence similarity | query: {caption}" for caption in captions
+            ]
 
         elif self.model_fmt == "e5":
             # https://huggingface.co/intfloat/multilingual-e5-base#usage
             formatted_captions = [f"query: {caption}" for caption in captions]
 
         elif self.model_fmt == "qwen3":
-            def get_detailed_instruct(task_description: str, query: str) -> str:
-                return f'Instruct: {task_description}\nQuery:{query}'
 
-            task = 'Given a web search query, retrieve relevant passages that answer the query'
+            def get_detailed_instruct(task_description: str, query: str) -> str:
+                return f"Instruct: {task_description}\nQuery:{query}"
+
+            task = "Given a web search query, retrieve relevant passages that answer the query"
 
             # https://huggingface.co/qwen/qwen3-embedding-0.6b#usage
-            formatted_captions = [f"{get_detailed_instruct(task, caption)}" for caption in captions]
+            formatted_captions = [
+                f"{get_detailed_instruct(task, caption)}" for caption in captions
+            ]
 
         elif self.model_fmt == "bge":
             # https://huggingface.co/baai/bge-m3#usage
