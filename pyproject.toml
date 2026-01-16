@@ -30,6 +30,7 @@ dependencies = [
     "huggingface-hub>=0.36.0",
     "pydantic>=2.12.5",
     "safetensors>=0.7.0",
+    "pot[backend-torch]>=0.9.6.post1",
 ]
 
 [project.urls]
