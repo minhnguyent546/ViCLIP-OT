@@ -310,9 +310,13 @@ class BatchLevelEntropicOTLoss(nn.Module):
     Batch-level Entropic Optimal Transport Loss
     """
 
-    def __init__(self, sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn"):
+    def __init__(self, sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced", "fused_gromov"] = "sinkhorn"):
         super().__init__()
         self.sinkhorn_solver = sinkhorn_solver
+        # fgw_alpha: float = 0.5
+        self.fgw_alpha = 0.5
+
+        print(f"Using Sinkhorn Solver: {self.sinkhorn_solver}")
 
     def get_logits(
         self,
@@ -387,6 +391,42 @@ class BatchLevelEntropicOTLoss(nn.Module):
 
         return transport_plan * batch_size  # pyright: ignore[reportReturnType]
 
+    def fused_gromov_solver(
+        self,
+        M: Tensor,
+        C1: Tensor,
+        C2: Tensor,
+        reg: float = 0.01,
+        max_num_iters: int = 200,
+    ) -> Tensor:
+        """
+        Solve the Entropic Fused Gromov-Wasserstein problem.
+        M: Inter-domain cost (Wasserstein)
+        C1, C2: Intra-domain structure costs (Gromov)
+        """
+        device = M.device
+        batch_size = M.shape[0]
+
+        # Marginal distributions (Uniform)
+        p = torch.ones((batch_size,), device=device) / batch_size
+        q = torch.ones((batch_size,), device=device) / batch_size
+
+        # Using square_loss as it fits feature distance better than kl_loss
+        transport_plan = ot.gromov.entropic_fused_gromov_wasserstein(
+            M=M,
+            C1=C1,
+            C2=C2,
+            p=p,
+            q=q,
+            loss_fun='square_loss',
+            epsilon=reg,
+            alpha=self.fgw_alpha,
+            numItermax=max_num_iters,
+            verbose=False
+        )
+
+        return transport_plan * batch_size  # pyright: ignore[reportReturnType]
+
     def forward(
         self,
         image_features: Tensor,
@@ -417,6 +457,20 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 reg=0.05,
                 reg_m=0.5,
                 max_num_iters=200,
+            )
+        elif self.sinkhorn_solver == "fused_gromov":
+            # Compute Intra-domain Structure Matrices (Gromov Term)
+            # Use float32 to match precision of cost_matrix usually
+            # Distance = 1 - Cosine Similarity
+            C1 = 1 - (image_features @ image_features.T)
+            C2 = 1 - (text_features @ text_features.T)
+
+            transport_plan = self.fused_gromov_solver(
+                M=cost_matrix,
+                C1=C1,
+                C2=C2,
+                reg=0.01, # FGW often prefers slightly smaller reg
+                max_num_iters=200
             )
         else:
             raise ValueError(f"Unsupported solver: {self.sinkhorn_solver}")
