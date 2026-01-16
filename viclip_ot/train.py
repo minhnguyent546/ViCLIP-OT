@@ -86,7 +86,7 @@ def train_model(args: argparse.Namespace) -> None:
             )
         criterion = losses.HybridClipTPLoss(
             ot_start_epoch=args.hybrid_clip_tp_loss_start_epoch - 1,  # convert to 0-based
-            ot_loss_lambda=args.ot_loss_lambda,
+            ot_loss_lambda=args.hybrid_clip_tp_loss_ot_loss_lambda,
         )
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")

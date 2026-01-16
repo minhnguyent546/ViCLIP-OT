@@ -122,6 +122,12 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         help="Epoch to start applying OT loss in HybridClipTPLoss (1-based)",
         default=25,
     )
+    group.add_argument(
+        "--hybrid_clip_tp_loss_ot_loss_lambda",
+        type=float,
+        help="Lambda for the OT loss in HybridClipTPLoss",
+        default=1.0,
+    )
 
     group.add_argument(
         "--num_epochs",
