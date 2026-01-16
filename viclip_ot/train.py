@@ -75,6 +75,8 @@ def train_model(args: argparse.Namespace) -> None:
     elif args.criterion == "entropic_ot_loss":
         # criterion = losses.HybridClipTPLoss()
         raise NotImplementedError("Entropic OT loss is not implemented yet.")
+    elif args.criterion == "batch_level_entropic_ot_loss":
+        criterion = losses.BatchLevelEntropicOTLoss()
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
 
@@ -451,16 +453,6 @@ def train_model(args: argparse.Namespace) -> None:
 
     # disable logging to stdout during training to avoid conflict with tqdm
     logger.remove(logger_init_config["stdout_id"])
-
-    if args.criterion == "clip_loss":
-        criterion = losses.ClipLoss()
-    elif args.criterion == "sig_lip_loss":
-        criterion = losses.SigLipLoss()
-    elif args.criterion == "entropic_ot_loss":
-        # criterion = losses.HybridClipTPLoss()
-        raise NotImplementedError("Entropic OT loss is not implemented yet.")
-    else:
-        raise ValueError(f"Unsupported criterion: {args.criterion}")
 
     global_step = 0
     training_start_time = time.perf_counter()

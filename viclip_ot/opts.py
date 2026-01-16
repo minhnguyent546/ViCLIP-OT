@@ -108,7 +108,7 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         "--criterion",
         type=str,
         help="Which loss criterion to use",
-        choices=["clip_loss", "sig_lip_loss", "entropic_ot_loss"],
+        choices=["clip_loss", "sig_lip_loss", "batch_level_entropic_ot_loss"],
         default="clip_loss",
     )
 
