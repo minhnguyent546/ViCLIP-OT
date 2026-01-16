@@ -222,6 +222,10 @@ class TextEncoder(nn.Module):
             self.dense = nn.Identity()  # no extra layers needed
         elif self.config.model_name == "qwen/qwen3-embedding-0.6b":
             self.dense = nn.Identity()  # no extra layers needed
+        elif self.config.model_name == "intfloat/multilingual-e5-base":
+            self.dense = nn.Identity()  # no extra layers needed
+        elif self.config.model_name == "intfloat/multilingual-e5-large":
+            self.dense = nn.Identity()  # no extra layers needed
         else:
             raise NotImplementedError(
                 f"TextEncoder for model {self.config.model_name} is not implemented yet."
