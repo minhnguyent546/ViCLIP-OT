@@ -357,6 +357,37 @@ class BatchLevelEntropicOTLoss(nn.Module):
 
         return transport_plan
 
+    def hicolt_ot(
+        self,
+        M: Tensor,
+        reg: float = 0.1,
+        stopThr: float = 1e-5,
+        max_num_iters: int = 1000,
+        epsilon=1e-6,
+    ) -> Tensor:
+        device = M.device
+        # Sinkhorn's algorithm
+        a = (M.sum(dim=1)).unsqueeze(1).to(device)
+        b = (M.sum(dim=0)).unsqueeze(1).to(device)
+
+        u = (torch.ones_like(a) / a.size()[0]).to(device)
+
+        K = torch.exp(-M / reg).clamp(min=1e-6)
+        err = 1
+        cpt = 0
+        while err > stopThr and cpt < max_num_iters:
+            v = torch.div(b, torch.matmul(K.t(), u) + epsilon)
+            u = torch.div(a, torch.matmul(K, v) + epsilon)
+            cpt += 1
+            if cpt % 50 == 1:
+                bb = torch.mul(v, torch.matmul(K.t(), u))
+                err = torch.norm(torch.sum(torch.abs(bb - b), dim=0), p=float("inf"))
+
+        transport_plan = u * (K * v.T)
+        transport_plan = transport_plan.clamp(min=1e-4)
+
+        return transport_plan
+
     def entropic_ot(self, metric_cost_matrix, reg=0.01, n=5):
         """
         Adapted from: https://github.com/fan23j/ICML2024-OT-CLIP/blob/main/training/loss.py#L5
@@ -414,12 +445,12 @@ class BatchLevelEntropicOTLoss(nn.Module):
             labels = torch.arange(logits_per_image.shape[0], device=device, dtype=torch.int64)
 
             loss_i2t = Fun.cross_entropy(
-                input=self.sinkhorn_unbalanced(1.0 - logits_per_image),
+                input=self.hicolt_ot(1.0 - logits_per_image),
                 target=labels,
                 reduction=reduction,
             )
             loss_t2i = Fun.cross_entropy(
-                input=self.sinkhorn_unbalanced(1.0 - logits_per_text),
+                input=self.hicolt_ot(1.0 - logits_per_text),
                 target=labels,
                 reduction=reduction,
             )
@@ -432,10 +463,10 @@ class BatchLevelEntropicOTLoss(nn.Module):
             soft_labels = matches.float()
             soft_labels = soft_labels / soft_labels.sum(dim=1, keepdim=True)
             loss_i2t = Fun.cross_entropy(
-                self.sinkhorn_unbalanced(1.0 - logits_per_image), soft_labels, reduction=reduction
+                self.hicolt_ot(1.0 - logits_per_image), soft_labels, reduction=reduction
             )
             loss_t2i = Fun.cross_entropy(
-                self.sinkhorn_unbalanced(1.0 - logits_per_text), soft_labels, reduction=reduction
+                self.hicolt_ot(1.0 - logits_per_text), soft_labels, reduction=reduction
             )
 
         total_loss = (loss_i2t + loss_t2i) / 2
