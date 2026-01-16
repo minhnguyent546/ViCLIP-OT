@@ -363,13 +363,13 @@ class BatchLevelEntropicOTLoss(nn.Module):
         reg: regularization parameter > 0
         n: number of iterations
         """
-
-        a = torch.ones(metric_cost_matrix.shape[0])
-        b = torch.ones(metric_cost_matrix.shape[0]) / metric_cost_matrix.shape[0]
+        device = metric_cost_matrix.device
+        a = torch.ones(metric_cost_matrix.shape[0], device=device)
+        b = torch.ones(metric_cost_matrix.shape[0], device=device) / metric_cost_matrix.shape[0]
 
         # initialize u and v as uniform distributions
-        u = torch.ones(a.shape[0]) / a.shape[0]
-        v = torch.ones(b.shape[0]) / b.shape[0]
+        u = torch.ones(a.shape[0], device=device) / a.shape[0]
+        v = torch.ones(b.shape[0], device=device) / b.shape[0]
 
         # compute kernel K using the negative cost matrix scaled by the regularization term
         K = torch.exp(-metric_cost_matrix / reg)
