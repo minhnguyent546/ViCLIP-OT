@@ -310,7 +310,10 @@ class BatchLevelEntropicOTLoss(nn.Module):
     Batch-level Entropic Optimal Transport Loss
     """
 
-    def __init__(self, sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced", "fused_gromov"] = "sinkhorn"):
+    def __init__(
+        self,
+        sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced", "fused_gromov"] = "sinkhorn",
+    ):
         super().__init__()
         self.sinkhorn_solver = sinkhorn_solver
         # fgw_alpha: float = 0.5
@@ -418,11 +421,11 @@ class BatchLevelEntropicOTLoss(nn.Module):
             C2=C2,
             p=p,
             q=q,
-            loss_fun='square_loss',
+            loss_fun="square_loss",
             epsilon=reg,
             alpha=self.fgw_alpha,
             numItermax=max_num_iters,
-            verbose=False
+            verbose=False,
         )
 
         return transport_plan * batch_size  # pyright: ignore[reportReturnType]
@@ -469,8 +472,8 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 M=cost_matrix,
                 C1=C1,
                 C2=C2,
-                reg=0.01, # FGW often prefers slightly smaller reg
-                max_num_iters=200
+                reg=0.01,  # FGW often prefers slightly smaller reg
+                max_num_iters=200,
             )
         else:
             raise ValueError(f"Unsupported solver: {self.sinkhorn_solver}")
@@ -492,10 +495,11 @@ class BatchLevelEntropicOTLoss(nn.Module):
         # )
 
         #  Generalized KL Divergence
-        sim_matrix = (logit_scale * sim_matrix).softmax(dim=1) * batch_size
+        sim_matrix = (logit_scale * sim_matrix).softmax(dim=1)
         loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
         loss_t2i = (
-            transport_plan.T * (transport_plan.T.log() - sim_matrix.T.log() - 1) + sim_matrix.T
+            transport_plan.t() * (transport_plan.t().log() - sim_matrix.t().log() - 1)
+            + sim_matrix.t()
         )
         if reduction == "mean":
             loss_i2t = loss_i2t.sum() / batch_size
