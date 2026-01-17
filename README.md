@@ -68,38 +68,52 @@ To train the model, you can run the following command:
 ```bash
 uv run python -m viclip_ot.train \
   --seed 42 \
-  --model_config ./config/model.yaml \
-  --dataset_dir ./data/UIT-ViIC \
-  --train_batch_size 64 \
+  --model_config ./config/model.vit_base_dinov3.yaml \
+  --dataset_dir ./data/UIT-OpenViIC \
+  --train_batch_size 16 \
+  --eval_batch_size 32 \
   --train_crop_size 224 \
-  --eval_batch_size 64 \
   --eval_resize_size 256 \
   --eval_crop_size 224 \
   --checkpoints_dir ./checkpoints \
-  --num_epochs 25 \
-  --num_workers 6 \
-  --log_file_interval 5 \
-  --mixed_precision fp16 \
-  --gradient_accum_steps 2 \
-  --lr 1e-4 \
-  --weight_decay 1e-5 \
+  --num_epochs 30 \
+  --num_workers 8 \
+  --log_file_interval 3 \
+  --mixed_precision bf16 \
+  --gradient_accum_steps 8 \
+  --lr 2e-4 \
+  --backbone_lr 5e-5 \
+  --lock_image \
+  --lock_image_last_unfreeze_groups 2 \
+  --weight_decay 1e-4 \
   --scheduler one_cycle_lr \
-  --min_lr 1e-7 \
-  --lr_warmup_epochs 4 \
+  --min_lr 1e-6 \
+  --lr_warmup_epochs 2 \
   --lr_warmup_method linear \
-  --best_checkpoint_metrics loss \
-  --save_best_k 4 \
+  --best_checkpoint_metrics t2i_R__1 i2t_R__1 \
+  --save_best_k 5 \
   --max_grad_norm 1.0 \
   --wandb_logging \
   --wandb_project viclip_ot_test \
-  --wandb_name test_01
+  --wandb_name cliploss_vit_base_dinov3_gemma300m_openviic_final_30
 ```
 
 ## 4. Inference
 
 To run inference on a trained model, you can use the following command:
 ```bash
-WIP
+uv run python -m viclip_ot.train \
+  --run_test_only \
+  --from_checkpoint <PATH_TO_YOUR_CHECKPOINT> \
+  --seed 42 \
+  --model_config ./config/model.vit_base_dinov3.yaml \
+  --dataset_dir ./data/UIT-OpenViIC \
+  --train_batch_size 16 \
+  --eval_batch_size 32 \
+  --train_crop_size 224 \
+  --eval_resize_size 256 \
+  --eval_crop_size 224 \
+  --num_workers 4 \
 ```
 
 ## 5. Citing
