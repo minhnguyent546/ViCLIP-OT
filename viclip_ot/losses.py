@@ -310,7 +310,10 @@ class BatchLevelEntropicOTLoss(nn.Module):
     Batch-level Entropic Optimal Transport Loss
     """
 
-    def __init__(self, sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced", "fused_gromov"] = "sinkhorn"):
+    def __init__(
+        self,
+        sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced", "fused_gromov"] = "sinkhorn",
+    ):
         super().__init__()
         self.sinkhorn_solver = sinkhorn_solver
         # fgw_alpha: float = 0.5
@@ -363,6 +366,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
     def sinkhorn_unbalanced(
         self,
         metric_cost_matrix,
+        sim_matrix: Tensor,
         reg: float = 0.05,
         reg_m: float = 0.5,
         max_num_iters: int = 200,
@@ -373,9 +377,12 @@ class BatchLevelEntropicOTLoss(nn.Module):
             Lower reg_m = looser constraints (ignores outliers more).
         """
         device = metric_cost_matrix.device
-        batch_size = metric_cost_matrix.shape[0]
-        a = torch.ones(batch_size, device=device) / batch_size
-        b = torch.ones(batch_size, device=device) / batch_size
+        # batch_size = metric_cost_matrix.shape[0]
+
+        # a = torch.ones(batch_size, device=device) / batch_size
+        # b = torch.ones(batch_size, device=device) / batch_size
+        a = sim_matrix.sum(dim=1, keepdim=True).to(device)
+        b = sim_matrix.sum(dim=0, keepdim=True).to(device)
 
         # This solves the transport where rows/cols don't have to sum exactly to 1/N
         transport_plan = ot.sinkhorn_unbalanced(
@@ -389,7 +396,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
             numItermax=max_num_iters,
         )
 
-        return transport_plan * batch_size  # pyright: ignore[reportReturnType]
+        return transport_plan  # pyright: ignore[reportReturnType]
 
     def fused_gromov_solver(
         self,
@@ -418,11 +425,11 @@ class BatchLevelEntropicOTLoss(nn.Module):
             C2=C2,
             p=p,
             q=q,
-            loss_fun='square_loss',
+            loss_fun="square_loss",
             epsilon=reg,
             alpha=self.fgw_alpha,
             numItermax=max_num_iters,
-            verbose=False
+            verbose=False,
         )
 
         return transport_plan * batch_size  # pyright: ignore[reportReturnType]
@@ -454,6 +461,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         elif self.sinkhorn_solver == "sinkhorn_unbalanced":
             transport_plan = self.sinkhorn_unbalanced(
                 metric_cost_matrix=cost_matrix,
+                sim_matrix=sim_matrix,
                 reg=0.05,
                 reg_m=0.5,
                 max_num_iters=200,
@@ -469,8 +477,8 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 M=cost_matrix,
                 C1=C1,
                 C2=C2,
-                reg=0.01, # FGW often prefers slightly smaller reg
-                max_num_iters=200
+                reg=0.01,  # FGW often prefers slightly smaller reg
+                max_num_iters=200,
             )
         else:
             raise ValueError(f"Unsupported solver: {self.sinkhorn_solver}")
@@ -491,8 +499,8 @@ class BatchLevelEntropicOTLoss(nn.Module):
         #     log_target=False,
         # )
 
-        #  Generalized KL Divergence
-        sim_matrix = (logit_scale * sim_matrix).softmax(dim=1) * batch_size
+        #  Generalized KL Divergence (transport_plan || sim_matrix)
+        # sim_matrix = (logit_scale * sim_matrix).softmax(dim=1) * batch_size
         loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
         loss_t2i = (
             transport_plan.T * (transport_plan.T.log() - sim_matrix.T.log() - 1) + sim_matrix.T
