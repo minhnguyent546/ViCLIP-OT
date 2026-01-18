@@ -7,132 +7,6 @@ import torch.nn.functional as Fun
 from torch import Tensor
 
 
-class SupConLoss(nn.Module):
-    """Supervised Contrastive Loss as in `Supervised Contrastive Learning` ([arXiv](https://arxiv.org/abs/2004.11362)).
-
-    It also supports the unsupervised contrastive loss in [SimCLR](https://arxiv.org/abs/2002.05709).
-
-    Taken and modified from: https://github.com/HobbitLong/SupContrast/blob/66a8fe53880d6a1084b2e4e0db0a019024d6d41a/losses.py#L11.
-
-    Modification:
-    - Add type hints.
-    - Get `device` using `features.device`
-    """
-
-    def __init__(
-        self,
-        temperature: float = 0.07,
-        contrast_mode: Literal["all", "one"] = "all",
-        base_temperature: float = 0.07,
-    ):
-        super().__init__()
-        self.temperature = temperature
-        self.contrast_mode = contrast_mode
-        self.base_temperature = base_temperature
-
-    def forward(self, features: Tensor, labels: Tensor | None = None, mask: Tensor | None = None):
-        """Compute loss for model. If both `labels` and `mask` are None,
-        it degenerates to SimCLR unsupervised loss:
-        https://arxiv.org/pdf/2002.05709.pdf
-
-        Args:
-            features: hidden vector of shape [bsz, n_views, ...].
-            labels: ground truth of shape [bsz].
-            mask: contrastive mask of shape [bsz, bsz], mask_{i,j}=1 if sample j
-                has the same class as sample i. Can be asymmetric.
-        Returns:
-            A loss scalar.
-        """
-        device = features.device
-
-        if len(features.shape) < 3:
-            raise ValueError(
-                "`features` needs to be [bsz, n_views, ...],at least 3 dimensions are required"
-            )
-        if len(features.shape) > 3:
-            features = features.view(features.shape[0], features.shape[1], -1)
-
-        batch_size = features.shape[0]
-        if labels is not None and mask is not None:
-            raise ValueError("Cannot define both `labels` and `mask`")
-        elif labels is None and mask is None:
-            mask = torch.eye(batch_size, dtype=torch.float32).to(device)
-        elif labels is not None:
-            labels = labels.contiguous().view(-1, 1)
-            if labels.shape[0] != batch_size:
-                raise ValueError("Num of labels does not match num of features")
-            mask = torch.eq(labels, labels.T).float().to(device)
-        else:
-            assert mask is not None
-            mask = mask.float().to(device)
-
-        contrast_count = features.shape[1]
-        contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
-        if self.contrast_mode == "one":
-            anchor_feature = features[:, 0]
-            anchor_count = 1
-        elif self.contrast_mode == "all":
-            anchor_feature = contrast_feature
-            anchor_count = contrast_count
-        else:
-            raise ValueError("Unknown mode: {}".format(self.contrast_mode))
-
-        # compute logits
-        anchor_dot_contrast = torch.div(
-            torch.matmul(anchor_feature, contrast_feature.T), self.temperature
-        )
-        # for numerical stability
-        logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
-        logits = anchor_dot_contrast - logits_max.detach()
-
-        # tile mask
-        mask = mask.repeat(anchor_count, contrast_count)
-        # mask-out self-contrast cases
-        logits_mask = torch.scatter(
-            torch.ones_like(mask),
-            1,
-            torch.arange(batch_size * anchor_count).view(-1, 1).to(device),
-            0,
-        )
-        mask = mask * logits_mask
-
-        # compute log_prob
-        exp_logits = torch.exp(logits) * logits_mask
-        # prevent computing log(0), which will produce nan in the loss
-        # see: https://github.com/HobbitLong/SupContrast/pull/111/changes/48140375921682b905915ec5c724bca5dd65c40e
-        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + 1e-6)
-        # compute mean of log-likelihood over positive
-        # modified to handle edge cases when there is no positive pair
-        # for an anchor point.
-        # Edge case e.g.:-
-        # features of shape: [4,1,...]
-        # labels:            [0,1,1,2]
-        # loss before mean:  [nan, ..., ..., nan]
-        mask_pos_pairs = mask.sum(1)
-        mask_pos_pairs = torch.where(mask_pos_pairs < 1e-6, 1, mask_pos_pairs)
-        mean_log_prob_pos = (mask * log_prob).sum(1) / mask_pos_pairs
-
-        # loss
-        loss = -(self.temperature / self.base_temperature) * mean_log_prob_pos
-        loss = loss.view(anchor_count, batch_size).mean()
-
-        return loss
-
-
-class XSampleContrastiveLoss(nn.Module):
-    """X-Sample ContrastiveLoss as in `X-Sample Contrastive Loss: Improving Contrastive Learning with Sample Similarity Graphs` ([arXiv](https://arxiv.org/abs/2407.18134)).
-
-    Reference:
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        raise NotImplementedError("XSampleContrastiveLoss is not yet implemented.")
-
-    def forward(self): ...
-
-
 class ClipLoss(nn.Module):
     """(Open) CLIP loss.
 
@@ -366,6 +240,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
     def sinkhorn_unbalanced(
         self,
         metric_cost_matrix,
+        sim_matrix: Tensor,
         reg: float = 0.05,
         reg_m: float = 0.5,
         max_num_iters: int = 200,
@@ -376,9 +251,12 @@ class BatchLevelEntropicOTLoss(nn.Module):
             Lower reg_m = looser constraints (ignores outliers more).
         """
         device = metric_cost_matrix.device
-        batch_size = metric_cost_matrix.shape[0]
-        a = torch.ones(batch_size, device=device) / batch_size
-        b = torch.ones(batch_size, device=device) / batch_size
+        # batch_size = metric_cost_matrix.shape[0]
+
+        # a = torch.ones(batch_size, device=device) / batch_size
+        # b = torch.ones(batch_size, device=device) / batch_size
+        a = sim_matrix.sum(dim=1, keepdim=True).to(device)
+        b = sim_matrix.sum(dim=0, keepdim=True).to(device)
 
         # This solves the transport where rows/cols don't have to sum exactly to 1/N
         transport_plan = ot.sinkhorn_unbalanced(
@@ -392,7 +270,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
             numItermax=max_num_iters,
         )
 
-        return transport_plan * batch_size  # pyright: ignore[reportReturnType]
+        return transport_plan  # pyright: ignore[reportReturnType]
 
     def fused_gromov_solver(
         self,
@@ -457,6 +335,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         elif self.sinkhorn_solver == "sinkhorn_unbalanced":
             transport_plan = self.sinkhorn_unbalanced(
                 metric_cost_matrix=cost_matrix,
+                sim_matrix=sim_matrix,
                 reg=0.05,
                 reg_m=0.5,
                 max_num_iters=200,
@@ -494,7 +373,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         #     log_target=False,
         # )
 
-        #  Generalized KL Divergence
+        #  Generalized KL Divergence (transport_plan || sim_matrix)
         sim_matrix = (logit_scale * sim_matrix).softmax(dim=1)
         loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
         loss_t2i = (
