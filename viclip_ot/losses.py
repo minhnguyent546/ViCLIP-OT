@@ -1,3 +1,4 @@
+import contextlib
 from typing import Literal
 
 import ot
@@ -324,7 +325,8 @@ class BatchLevelEntropicOTLoss(nn.Module):
             logit_bias=logit_bias,
         )
 
-        with torch.no_grad():
+        ctx = contextlib.nullcontext() if sim_matrix is None else torch.no_grad()
+        with ctx:
             # compute raw cosine similarity (without scaling and bias)
             raw_cosine_sim = image_features @ text_features.T
             cost_matrix = 1 - raw_cosine_sim  # values are in range [0, 2]
@@ -439,7 +441,7 @@ class HybridClipTPLoss(nn.Module):
         self,
         ot_start_epoch: int,
         ot_loss_lambda: float = 1.0,
-        sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn_unbalanced",
+        sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
     ):
         """
         Args:
