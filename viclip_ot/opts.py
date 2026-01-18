@@ -105,6 +105,12 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         help="Whether to perform linear probing (only train the final classifier layer)",
     )
     group.add_argument(
+        "--adamw_eps",
+        type=float,
+        help="Epsilon value for the AdamW optimizer",
+        default=1e-8,
+    )
+    group.add_argument(
         "--criterion",
         type=str,
         help="Which loss criterion to use",
