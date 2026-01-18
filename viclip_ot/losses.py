@@ -325,7 +325,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
             logit_bias=logit_bias,
         )
 
-        ctx = contextlib.nullcontext() if sim_matrix is None else torch.no_grad()
+        ctx = contextlib.nullcontext() if sim_matrix is not None else torch.no_grad()
         with ctx:
             # compute raw cosine similarity (without scaling and bias)
             raw_cosine_sim = image_features @ text_features.T
