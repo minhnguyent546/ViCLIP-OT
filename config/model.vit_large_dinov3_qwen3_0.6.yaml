@@ -1,0 +1,14 @@
+image_config:
+  model_name: timm/vit_large_patch16_dinov3.lvd1689m
+  pretrained: true
+  pool: avg
+  proj: linear # low-resource
+  proj_bias: false
+  proj_dropout_rate: 0.1
+
+text_config:
+  model_name: qwen/qwen3-embedding-0.6b
+  proj: none
+  proj_bias: false
+
+embed_dim: 1024
