@@ -190,7 +190,6 @@ class BatchLevelEntropicOTLoss(nn.Module):
     ):
         super().__init__()
         self.sinkhorn_solver = sinkhorn_solver
-        # fgw_alpha: float = 0.5
         self.fgw_alpha = 0.5
 
         print(f"Using Sinkhorn Solver: {self.sinkhorn_solver}")
@@ -217,7 +216,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
     def sinkhorn(
         self,
         metric_cost_matrix: Tensor,
-        reg: float = 0.1,
+        reg: float = 0.05,  # try with [0.01, 0.1] with normalized cost matrix
         max_num_iters: int = 200,
     ) -> Tensor:
         """Solve the unbalanced entropic regularization optimal transport problem and return the OT plan."""
@@ -235,28 +234,21 @@ class BatchLevelEntropicOTLoss(nn.Module):
             numItermax=max_num_iters,
         )
 
+        # scale with batch_size as we initialize `a` and `b` with equal weight `1 / N` for each image (and text)
         return transport_plan * batch_size  # pyright: ignore[reportReturnType]
 
     def sinkhorn_unbalanced(
         self,
         metric_cost_matrix,
-        sim_matrix: Tensor,
-        reg: float = 0.05,
-        reg_m: float = 0.5,
+        reg: float = 0.05,  # try with [0.01, 0.1] with normalized cost matrix
+        reg_m: float = 0.4,  # try with [0.3, 0.8] with normalized cost matrix
         max_num_iters: int = 200,
     ):
-        """
-        reg: Entropy regularization (smoothness)
-        reg_m: Marginal relaxation (how much we allow mass to deviate from 1/N)
-            Lower reg_m = looser constraints (ignores outliers more).
-        """
         device = metric_cost_matrix.device
-        # batch_size = metric_cost_matrix.shape[0]
+        batch_size = metric_cost_matrix.shape[0]
 
-        # a = torch.ones(batch_size, device=device) / batch_size
-        # b = torch.ones(batch_size, device=device) / batch_size
-        a = sim_matrix.sum(dim=1, keepdim=True).to(device)
-        b = sim_matrix.sum(dim=0, keepdim=True).to(device)
+        a = torch.ones(batch_size, device=device) / batch_size
+        b = torch.ones(batch_size, device=device) / batch_size
 
         # This solves the transport where rows/cols don't have to sum exactly to 1/N
         transport_plan = ot.sinkhorn_unbalanced(
@@ -313,7 +305,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         image_features: Tensor,
         text_features: Tensor,
         logit_scale: Tensor,
-        sim_matrix: Tensor,
+        logit_bias: Tensor | None = None,
         output_dict: bool = False,
         reduction: str = "mean",
         **kwargs,
@@ -321,42 +313,57 @@ class BatchLevelEntropicOTLoss(nn.Module):
         """
         If `image_ids` is provided, the computation will take into account image with multiple captions.
         """
-        batch_size = image_features.shape[0]
+        logits_per_image, logits_per_text = self.get_logits(
+            image_features,
+            text_features,
+            logit_scale,
+            logit_bias=logit_bias,
+        )
 
-        # compute raw cosine similarity (without scaling and bias)
-        raw_cosine_sim = image_features @ text_features.T
-        cost_matrix = 1 - raw_cosine_sim  # values are in range [0, 2]
-        if self.sinkhorn_solver == "sinkhorn":
-            transport_plan = self.sinkhorn(
-                metric_cost_matrix=cost_matrix,
-                reg=0.05,
-                max_num_iters=200,
-            )
-        elif self.sinkhorn_solver == "sinkhorn_unbalanced":
-            transport_plan = self.sinkhorn_unbalanced(
-                metric_cost_matrix=cost_matrix,
-                sim_matrix=sim_matrix,
-                reg=0.05,
-                reg_m=0.5,
-                max_num_iters=200,
-            )
-        elif self.sinkhorn_solver == "fused_gromov":
-            # Compute Intra-domain Structure Matrices (Gromov Term)
-            # Use float32 to match precision of cost_matrix usually
-            # Distance = 1 - Cosine Similarity
-            C1 = 1 - (image_features @ image_features.T)
-            C2 = 1 - (text_features @ text_features.T)
+        with torch.no_grad():
+            # compute raw cosine similarity (without scaling and bias)
+            raw_cosine_sim = image_features @ text_features.T
+            cost_matrix = 1 - raw_cosine_sim  # values are in range [0, 2]
+            if self.sinkhorn_solver == "sinkhorn":
+                transport_plan = self.sinkhorn(
+                    metric_cost_matrix=cost_matrix,
+                    reg=0.05,
+                    max_num_iters=200,
+                )
+            elif self.sinkhorn_solver == "sinkhorn_unbalanced":
+                transport_plan = self.sinkhorn_unbalanced(
+                    metric_cost_matrix=cost_matrix,
+                    reg=0.05,
+                    reg_m=0.4,  # cosine similarity scores < (1 - 0.4) = 0.6 will be considered as dissimilar/noisy
+                    max_num_iters=200,
+                )
+            elif self.sinkhorn_solver == "fused_gromov":
+                # Compute Intra-domain Structure Matrices (Gromov Term)
+                # Use float32 to match precision of cost_matrix usually
+                # Distance = 1 - Cosine Similarity
+                C1 = 1 - (image_features @ image_features.T)
+                C2 = 1 - (text_features @ text_features.T)
 
-            transport_plan = self.fused_gromov_solver(
-                M=cost_matrix,
-                C1=C1,
-                C2=C2,
-                reg=0.01,  # FGW often prefers slightly smaller reg
-                max_num_iters=200,
-            )
-        else:
-            raise ValueError(f"Unsupported solver: {self.sinkhorn_solver}")
+                transport_plan = self.fused_gromov_solver(
+                    M=cost_matrix,
+                    C1=C1,
+                    C2=C2,
+                    reg=0.01,  # FGW often prefers slightly smaller reg
+                    max_num_iters=200,
+                )
+            else:
+                raise ValueError(f"Unsupported solver: {self.sinkhorn_solver}")
 
+        loss_i2t = Fun.cross_entropy(
+            input=logits_per_image,
+            target=transport_plan,
+            reduction=reduction,
+        )
+        loss_t2i = Fun.cross_entropy(
+            input=logits_per_text,
+            target=transport_plan.T,
+            reduction=reduction,
+        )
         # # Use KL Divergence for soft labels
         # # KL(target || input) = sum(target * (log(target) - input))
         # # Here input is log_plan.
@@ -374,24 +381,23 @@ class BatchLevelEntropicOTLoss(nn.Module):
         # )
 
         #  Generalized KL Divergence (transport_plan || sim_matrix)
-        sim_matrix = (logit_scale * sim_matrix).softmax(dim=1)
-        loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
-        loss_t2i = (
-            transport_plan.t() * (transport_plan.t().log() - sim_matrix.t().log() - 1)
-            + sim_matrix.t()
-        )
-        if reduction == "mean":
-            loss_i2t = loss_i2t.sum() / batch_size
-            loss_t2i = loss_t2i.sum() / batch_size
-        elif reduction == "sum":
-            loss_i2t = loss_i2t.sum()
-            loss_t2i = loss_t2i.sum()
-        elif reduction == "none":
-            pass
-        else:
-            raise ValueError(
-                f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
-            )
+        # sim_matrix = (logit_scale * sim_matrix).softmax(dim=1) * batch_size
+        # loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
+        # loss_t2i = (
+        #     transport_plan.T * (transport_plan.T.log() - sim_matrix.T.log() - 1) + sim_matrix.T
+        # )
+        # if reduction == "mean":
+        #     loss_i2t = loss_i2t.sum() / batch_size
+        #     loss_t2i = loss_t2i.sum() / batch_size
+        # elif reduction == "sum":
+        #     loss_i2t = loss_i2t.sum()
+        #     loss_t2i = loss_t2i.sum()
+        # elif reduction == "none":
+        #     pass
+        # else:
+        #     raise ValueError(
+        #         f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
+        #     )
 
         total_loss = (loss_i2t + loss_t2i) / 2
 
@@ -450,6 +456,7 @@ class HybridClipTPLoss(nn.Module):
                 text_features=text_features,
                 sim_matrix=sim_matrix,
                 logit_scale=logit_scale,
+                logit_bias=logit_bias,
                 output_dict=False,
                 reduction=reduction,
             )

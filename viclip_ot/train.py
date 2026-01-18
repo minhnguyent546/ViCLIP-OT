@@ -158,11 +158,6 @@ def train_model(args: argparse.Namespace) -> None:
 
     logger.info(f"Determined model format: {model_fmt()}")
 
-    # TODO: refactor me!!!
-    caption_embeddings = torch.load(
-        "uit_openviic_train_caption_embeddings.pt", map_location=device
-    )
-
     train_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
         metadata_json_file="train.json",
@@ -533,16 +528,6 @@ def train_model(args: argparse.Namespace) -> None:
                 text_inputs = batches[0]["text_inputs"].to(device=device, non_blocking=True)
                 image_ids = batches[0]["image_ids"]
 
-                if isinstance(
-                    criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
-                ):
-                    sample_indices = batches[0]["indices"]
-                    caption_ids = train_data_loader.dataset.get_caption_ids(sample_indices)  # pyright: ignore
-                    sim_matrix = (
-                        caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].T
-                    )
-                    criterion_kwargs["sim_matrix"] = sim_matrix
-
                 with autocast_context:
                     model_outputs = model(images, text_inputs)
                     loss = criterion(
@@ -576,19 +561,6 @@ def train_model(args: argparse.Namespace) -> None:
                                     cached_features[key] = []
                                 cached_features[key].append(value)
 
-                all_image_ids = torch.cat([batch["image_ids"] for batch in batches], dim=0)
-
-                if isinstance(
-                    criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
-                ):
-                    all_indices = [idx for batch in batches for idx in batch["indices"]]
-                    caption_ids = train_data_loader.dataset.get_caption_ids(all_indices)  # pyright: ignore
-                    sim_matrix = (
-                        caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].T
-                    )
-                    criterion_kwargs["sim_matrix"] = sim_matrix
-
-                accum_num_samples = 0
                 # step 2: re-do the forward pass for those batches, and use the cache features
                 for batch_idx, batch in enumerate(batches):
                     images = batch["images"].to(device=device, non_blocking=True)
@@ -612,20 +584,11 @@ def train_model(args: argparse.Namespace) -> None:
                         loss = criterion(
                             **outputs_for_loss,
                             **outputs_no_cached,
-                            image_ids=torch.cat(
-                                [
-                                    all_image_ids[:accum_num_samples],
-                                    image_ids,
-                                    all_image_ids[accum_num_samples + image_ids.size(0) :],
-                                ]
-                            ),
                             reduction="sum",
                             **criterion_kwargs,
                         )
                         del outputs_for_loss
                         del outputs_no_cached
-
-                        accum_num_samples += image_ids.size(0)
 
                         if num_items_in_batch > 0:
                             loss = loss / num_items_in_batch
