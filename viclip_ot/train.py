@@ -404,7 +404,7 @@ def train_model(args: argparse.Namespace) -> None:
     assert not missing, f"Trainable params missing from optimizer: {len(missing)}"
     assert not extra, f"Frozen params included in optimizer: {len(extra)}"
 
-    optimizer = AdamW(param_groups)
+    optimizer = AdamW(param_groups,eps=1e-10)
 
     num_updates_per_epoch = (
         len(train_data_loader) + args.gradient_accum_steps - 1
