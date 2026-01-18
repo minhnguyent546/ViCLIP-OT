@@ -123,9 +123,19 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         choices=[
             "sinkhorn",
             "sinkhorn_unbalanced",
-            "entropic_fused_gromov",
+            # "entropic_fused_gromov",
         ],
-        default="sinkhorn",
+        default="sinkhorn_unbalanced",
+    )
+    group.add_argument(
+        "--sim_graph_regularized_ot",
+        action="store_true",
+        help="Whether to use similarity graph regularized OT for batch-level entropic OT loss",
+    )
+    group.add_argument(
+        "--precomputed_caption_embeddings_path",
+        type=str,
+        help="Path to precomputed caption embeddings for similarity graph regularized OT (.pt file)",
     )
     group.add_argument(
         "--hybrid_clip_tp_loss_start_epoch",

@@ -264,43 +264,43 @@ class BatchLevelEntropicOTLoss(nn.Module):
 
         return transport_plan  # pyright: ignore[reportReturnType]
 
-    def entropic_fused_gromov_solver(
-        self,
-        M: Tensor,
-        C1: Tensor,
-        C2: Tensor,
-        alpha: float = 0.5,
-        epsilon: float = 0.01,
-        max_num_iters: int = 100,
-        sinkhorn_solver_max_iters: int = 5,
-    ) -> Tensor:
-        """
-        Solve the Entropic Fused Gromov-Wasserstein problem.
-        M: Inter-domain cost (Wasserstein)
-        C1, C2: Intra-domain structure costs (Gromov)
-        """
-        device = M.device
-        batch_size = M.shape[0]
+    # def entropic_fused_gromov_solver(
+    #     self,
+    #     M: Tensor,
+    #     C1: Tensor,
+    #     C2: Tensor,
+    #     alpha: float = 0.5,
+    #     epsilon: float = 0.01,
+    #     max_num_iters: int = 100,
+    #     sinkhorn_solver_max_iters: int = 5,
+    # ) -> Tensor:
+    #     """
+    #     Solve the Entropic Fused Gromov-Wasserstein problem.
+    #     M: Inter-domain cost (Wasserstein)
+    #     C1, C2: Intra-domain structure costs (Gromov)
+    #     """
+    #     device = M.device
+    #     batch_size = M.shape[0]
 
-        # Marginal distributions (Uniform)
-        p = torch.ones((batch_size,), device=device) / batch_size
-        q = torch.ones((batch_size,), device=device) / batch_size
+    #     # Marginal distributions (Uniform)
+    #     p = torch.ones((batch_size,), device=device) / batch_size
+    #     q = torch.ones((batch_size,), device=device) / batch_size
 
-        # Using square_loss as it fits feature distance better than kl_loss
-        transport_plan = ot.gromov.entropic_fused_gromov_wasserstein(
-            M=M,
-            C1=C1,
-            C2=C2,
-            p=p,
-            q=q,
-            alpha=alpha,  # 0 = pure Wasserstein, 1 = pure Gromov, 0.5 = balanced
-            loss_fun="square_loss",
-            epsilon=epsilon,
-            max_iter=max_num_iters,
-            numItermax=sinkhorn_solver_max_iters,  # this parameter is for sinkhorn solver
-        )
+    #     # Using square_loss as it fits feature distance better than kl_loss
+    #     transport_plan = ot.gromov.entropic_fused_gromov_wasserstein(
+    #         M=M,
+    #         C1=C1,
+    #         C2=C2,
+    #         p=p,
+    #         q=q,
+    #         alpha=alpha,  # 0 = pure Wasserstein, 1 = pure Gromov, 0.5 = balanced
+    #         loss_fun="square_loss",
+    #         epsilon=epsilon,
+    #         max_iter=max_num_iters,
+    #         numItermax=sinkhorn_solver_max_iters,  # this parameter is for sinkhorn solver
+    #     )
 
-        return transport_plan * batch_size  # pyright: ignore[reportReturnType]
+    #     return transport_plan * batch_size  # pyright: ignore[reportReturnType]
 
     def forward(
         self,
@@ -309,12 +309,14 @@ class BatchLevelEntropicOTLoss(nn.Module):
         logit_scale: Tensor,
         logit_bias: Tensor | None = None,
         output_dict: bool = False,
+        sim_matrix: Tensor | None = None,
         reduction: str = "mean",
         **kwargs,
     ):
         """
         If `image_ids` is provided, the computation will take into account image with multiple captions.
         """
+        batch_size = image_features.shape[0]
         logits_per_image, logits_per_text = self.get_logits(
             image_features,
             text_features,
@@ -339,51 +341,41 @@ class BatchLevelEntropicOTLoss(nn.Module):
                     reg_m=0.4,  # cosine similarity scores < (1 - 0.4) = 0.6 will be considered as dissimilar/noisy
                     max_num_iters=200,
                 )
-            elif self.sinkhorn_solver == "entropic_fused_gromov":
-                # Compute Intra-domain Structure Matrices (Gromov Term)
-                # Use float32 to match precision of cost_matrix usually
-                # Distance = 1 - Cosine Similarity
-                C1 = 1 - (image_features @ image_features.T)
-                C2 = 1 - (text_features @ text_features.T)
+            # elif self.sinkhorn_solver == "entropic_fused_gromov":
+            #     # Compute Intra-domain Structure Matrices (Gromov Term)
+            #     # Use float32 to match precision of cost_matrix usually
+            #     # Distance = 1 - Cosine Similarity
+            #     C1 = 1 - (image_features @ image_features.T)
+            #     C2 = 1 - (text_features @ text_features.T)
 
-                # https://pythonot.github.io/gen_modules/ot.gromov.html#ot.gromov.entropic_fused_gromov_wasserstein
-                transport_plan = self.entropic_fused_gromov_solver(
-                    M=cost_matrix,
-                    C1=C1,
-                    C2=C2,
-                    alpha=self.fgw_alpha,
-                    epsilon=0.01,  # ~ reg by definition in sinkhorn
-                    max_num_iters=100,
-                    sinkhorn_solver_max_iters=5,
-                )
+            #     # https://pythonot.github.io/gen_modules/ot.gromov.html#ot.gromov.entropic_fused_gromov_wasserstein
+            #     transport_plan = self.entropic_fused_gromov_solver(
+            #         M=cost_matrix,
+            #         C1=C1,
+            #         C2=C2,
+            #         alpha=self.fgw_alpha,
+            #         epsilon=0.01,  # ~ reg by definition in sinkhorn
+            #         max_num_iters=100,
+            #         sinkhorn_solver_max_iters=5,
+            #     )
 
-                loss_wass = torch.sum(transport_plan * cost_matrix)
+            #     loss_wass = torch.sum(transport_plan * cost_matrix)
 
-                term_1 = torch.sum(C1**2)
-                term_2 = torch.sum(C2**2)
+            #     term_1 = torch.sum(C1**2)
+            #     term_2 = torch.sum(C2**2)
 
-                term_cross = -2 * torch.sum(C1 * (transport_plan @ C2 @ transport_plan.T))
+            #     term_cross = -2 * torch.sum(C1 * (transport_plan @ C2 @ transport_plan.T))
 
-                loss_gromov = term_1 + term_2 + term_cross
+            #     loss_gromov = term_1 + term_2 + term_cross
 
-                final_loss = (1 - self.fgw_alpha) * loss_wass + self.fgw_alpha * loss_gromov
-                if reduction == "mean":
-                    final_loss = final_loss / image_features.shape[0]
+            #     final_loss = (1 - self.fgw_alpha) * loss_wass + self.fgw_alpha * loss_gromov
+            #     if reduction == "mean":
+            #         final_loss = final_loss / image_features.shape[0]
 
-                return {"loss": final_loss} if output_dict else final_loss
+            #     return {"loss": final_loss} if output_dict else final_loss
             else:
                 raise ValueError(f"Unsupported solver: {self.sinkhorn_solver}")
 
-        loss_i2t = Fun.cross_entropy(
-            input=logits_per_image,
-            target=transport_plan,
-            reduction=reduction,
-        )
-        loss_t2i = Fun.cross_entropy(
-            input=logits_per_text,
-            target=transport_plan.T,
-            reduction=reduction,
-        )
         # # Use KL Divergence for soft labels
         # # KL(target || input) = sum(target * (log(target) - input))
         # # Here input is log_plan.
@@ -400,24 +392,38 @@ class BatchLevelEntropicOTLoss(nn.Module):
         #     log_target=False,
         # )
 
-        #  Generalized KL Divergence (transport_plan || sim_matrix)
-        # sim_matrix = (logit_scale * sim_matrix).softmax(dim=1) * batch_size
-        # loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
-        # loss_t2i = (
-        #     transport_plan.T * (transport_plan.T.log() - sim_matrix.T.log() - 1) + sim_matrix.T
-        # )
-        # if reduction == "mean":
-        #     loss_i2t = loss_i2t.sum() / batch_size
-        #     loss_t2i = loss_t2i.sum() / batch_size
-        # elif reduction == "sum":
-        #     loss_i2t = loss_i2t.sum()
-        #     loss_t2i = loss_t2i.sum()
-        # elif reduction == "none":
-        #     pass
-        # else:
-        #     raise ValueError(
-        #         f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
-        #     )
+        if sim_matrix is not None:
+            #  Generalized KL Divergence (transport_plan || sim_matrix)
+            # NOTE: note that this is reverse KL divergence
+            sim_matrix = (logit_scale * sim_matrix).softmax(dim=1)
+            loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
+            loss_t2i = (
+                transport_plan.t() * (transport_plan.t().log() - sim_matrix.t().log() - 1)
+                + sim_matrix.t()
+            )
+            if reduction == "mean":
+                loss_i2t = loss_i2t.sum() / batch_size
+                loss_t2i = loss_t2i.sum() / batch_size
+            elif reduction == "sum":
+                loss_i2t = loss_i2t.sum()
+                loss_t2i = loss_t2i.sum()
+            elif reduction == "none":
+                pass
+            else:
+                raise ValueError(
+                    f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
+                )
+        else:
+            loss_i2t = Fun.cross_entropy(
+                input=logits_per_image,
+                target=transport_plan,
+                reduction=reduction,
+            )
+            loss_t2i = Fun.cross_entropy(
+                input=logits_per_text,
+                target=transport_plan.T,
+                reduction=reduction,
+            )
 
         total_loss = (loss_i2t + loss_t2i) / 2
 
