@@ -88,6 +88,27 @@ def train_model(args: argparse.Namespace) -> None:
             args.precomputed_caption_embeddings_path, map_location=device
         )
 
+        if (
+            args.precomputed_image_embeddings_path is None
+            or not os.path.isfile(args.precomputed_image_embeddings_path)
+            or not args.precomputed_image_embeddings_path.endswith(".pt")
+        ):
+            raise ValueError(
+                "Please provide a valid path to precomputed image embeddings (.pt file) "
+                "when using similarity graph regularized OT."
+            )
+        logger.info(
+            f"Using similarity graph regularized OT with precomputed image embeddings from {args.precomputed_image_embeddings_path}.",
+        )
+        image_embeddings = torch.load(
+            args.precomputed_image_embeddings_path, map_location=device
+        )
+
+        sim_graph_alpha = args.sim_graph_alpha
+        logger.info(
+            f"Using precomputed similarity graph with alpha = {sim_graph_alpha}."
+        )
+
     if args.criterion == "clip_loss":
         criterion = losses.ClipLoss()
     elif args.criterion == "sig_lip_loss":
@@ -555,7 +576,8 @@ def train_model(args: argparse.Namespace) -> None:
                     sample_indices = batches[0]["indices"]
                     caption_ids = train_data_loader.dataset.get_caption_ids(sample_indices)  # pyright: ignore
                     sim_matrix = (
-                        caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t()
+                        (1 - sim_graph_alpha) * caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t()
+                        + sim_graph_alpha * image_embeddings[caption_ids] @ image_embeddings[caption_ids].t()
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 

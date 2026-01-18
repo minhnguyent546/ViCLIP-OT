@@ -138,6 +138,17 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         help="Path to precomputed caption embeddings for similarity graph regularized OT (.pt file)",
     )
     group.add_argument(
+        "--precomputed_image_embeddings_path",
+        type=str,
+        help="Path to precomputed image embeddings for similarity graph regularized OT (.pt file)",
+    )
+    group.add_argument(
+        "--sim_graph_alpha",
+        type=float,
+        help="Alpha value for similarity graph regularized OT",
+        default=0.5,
+    )
+    group.add_argument(
         "--hybrid_clip_tp_loss_start_epoch",
         type=int,
         help="Epoch to start applying OT loss in HybridClipTPLoss (1-based)",
