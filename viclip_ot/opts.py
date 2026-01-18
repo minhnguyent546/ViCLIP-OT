@@ -123,7 +123,7 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         choices=[
             "sinkhorn",
             "sinkhorn_unbalanced",
-            "fused_gromov",
+            "entropic_fused_gromov",
         ],
         default="sinkhorn",
     )

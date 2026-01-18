@@ -264,13 +264,15 @@ class BatchLevelEntropicOTLoss(nn.Module):
 
         return transport_plan  # pyright: ignore[reportReturnType]
 
-    def fused_gromov_solver(
+    def entropic_fused_gromov_solver(
         self,
         M: Tensor,
         C1: Tensor,
         C2: Tensor,
-        reg: float = 0.01,
-        max_num_iters: int = 200,
+        alpha: float = 0.5,
+        epsilon: float = 0.01,
+        max_num_iters: int = 100,
+        sinkhorn_solver_max_iters: int = 5,
     ) -> Tensor:
         """
         Solve the Entropic Fused Gromov-Wasserstein problem.
@@ -291,11 +293,11 @@ class BatchLevelEntropicOTLoss(nn.Module):
             C2=C2,
             p=p,
             q=q,
+            alpha=alpha,  # 0 = pure Wasserstein, 1 = pure Gromov, 0.5 = balanced
             loss_fun="square_loss",
-            epsilon=reg,
-            alpha=self.fgw_alpha,
-            numItermax=max_num_iters,
-            verbose=False,
+            epsilon=epsilon,
+            max_iter=max_num_iters,
+            numItermax=sinkhorn_solver_max_iters,  # this parameter is for sinkhorn solver
         )
 
         return transport_plan * batch_size  # pyright: ignore[reportReturnType]
@@ -337,19 +339,22 @@ class BatchLevelEntropicOTLoss(nn.Module):
                     reg_m=0.4,  # cosine similarity scores < (1 - 0.4) = 0.6 will be considered as dissimilar/noisy
                     max_num_iters=200,
                 )
-            elif self.sinkhorn_solver == "fused_gromov":
+            elif self.sinkhorn_solver == "entropic_fused_gromov":
                 # Compute Intra-domain Structure Matrices (Gromov Term)
                 # Use float32 to match precision of cost_matrix usually
                 # Distance = 1 - Cosine Similarity
                 C1 = 1 - (image_features @ image_features.T)
                 C2 = 1 - (text_features @ text_features.T)
 
-                transport_plan = self.fused_gromov_solver(
+                # https://pythonot.github.io/gen_modules/ot.gromov.html#ot.gromov.entropic_fused_gromov_wasserstein
+                transport_plan = self.entropic_fused_gromov_solver(
                     M=cost_matrix,
                     C1=C1,
                     C2=C2,
-                    reg=0.01,  # FGW often prefers slightly smaller reg
-                    max_num_iters=200,
+                    alpha=self.fgw_alpha,
+                    epsilon=0.01,  # ~ reg by definition in sinkhorn
+                    max_num_iters=100,
+                    sinkhorn_solver_max_iters=5,
                 )
             else:
                 raise ValueError(f"Unsupported solver: {self.sinkhorn_solver}")
