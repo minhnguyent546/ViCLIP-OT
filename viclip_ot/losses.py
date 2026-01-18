@@ -433,7 +433,6 @@ class HybridClipTPLoss(nn.Module):
         image_features: Tensor,
         text_features: Tensor,
         logit_scale: Tensor,
-        sim_matrix: Tensor,
         epoch: int,
         logit_bias: Tensor | None = None,
         image_ids: Tensor | None = None,
@@ -454,7 +453,6 @@ class HybridClipTPLoss(nn.Module):
             ot_loss_value = self.ot_loss(
                 image_features=image_features,
                 text_features=text_features,
-                sim_matrix=sim_matrix,
                 logit_scale=logit_scale,
                 logit_bias=logit_bias,
                 output_dict=False,
