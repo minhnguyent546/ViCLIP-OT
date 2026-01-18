@@ -263,7 +263,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
             numItermax=max_num_iters,
         )
 
-        return transport_plan  # pyright: ignore[reportReturnType]
+        return transport_plan * batch_size  # pyright: ignore[reportReturnType]
 
     # def entropic_fused_gromov_solver(
     #     self,
