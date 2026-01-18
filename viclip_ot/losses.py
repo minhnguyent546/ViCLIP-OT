@@ -356,6 +356,21 @@ class BatchLevelEntropicOTLoss(nn.Module):
                     max_num_iters=100,
                     sinkhorn_solver_max_iters=5,
                 )
+
+                loss_wass = torch.sum(transport_plan * cost_matrix)
+
+                term_1 = torch.sum(C1**2)
+                term_2 = torch.sum(C2**2)
+
+                term_cross = -2 * torch.sum(C1 * (transport_plan @ C2 @ transport_plan.T))
+
+                loss_gromov = term_1 + term_2 + term_cross
+
+                final_loss = (1 - self.fgw_alpha) * loss_wass + self.fgw_alpha * loss_gromov
+                if reduction == "mean":
+                    final_loss = final_loss / image_features.shape[0]
+
+                return {"loss": final_loss} if output_dict else final_loss
             else:
                 raise ValueError(f"Unsupported solver: {self.sinkhorn_solver}")
 
