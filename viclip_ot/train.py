@@ -410,6 +410,9 @@ def train_model(args: argparse.Namespace) -> None:
         optim_cls = torch.optim.AdamW
     else:
         raise ValueError(f"Unsupported optimizer: {args.optimizer}")
+    logger.info(
+        f"Using {args.optimizer} optimizer with eps={args.adam_eps} and betas={args.adam_betas}"
+    )
     optimizer = optim_cls(param_groups, betas=args.adam_betas, eps=args.adam_eps)
 
     num_updates_per_epoch = (
