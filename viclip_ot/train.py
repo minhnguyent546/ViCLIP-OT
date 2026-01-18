@@ -85,7 +85,7 @@ def train_model(args: argparse.Namespace) -> None:
             f"Using similarity graph regularized OT with precomputed caption embeddings from {args.precomputed_caption_embeddings_path}.",
         )
         caption_embeddings = torch.load(
-            args.args.precomputed_caption_embeddings_path, map_location=device
+            args.precomputed_caption_embeddings_path, map_location=device
         )
 
     if args.criterion == "clip_loss":
