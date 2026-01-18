@@ -69,7 +69,12 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
 
 
 def compute_embeddings(args: argparse.Namespace) -> None:
-    model = Qwen3VLEmbedder(args.model, dtype=args.dtype)
+    model = Qwen3VLEmbedder(
+        args.model,
+        dtype=args.dtype,
+        attn_implementation="flash_attention_2",
+        max_pixels=345600,  # 480x720
+    )
 
     dataset_dir = args.dataset_dir
     metadata_json_file = args.metadata_json_file
