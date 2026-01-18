@@ -185,6 +185,26 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
 
     # optimizer
     group.add_argument(
+        "--optimizer",
+        type=str,
+        help="Optimizer to use",
+        choices=["adam", "adamw"],
+        default="adamw",
+    )
+    group.add_argument(
+        "--adam_betas",
+        type=float,
+        nargs=2,
+        help="Betas for Adam/AdamW optimizer. Pass it as --adam_betas <beta1> <beta2>",
+        default=(0.9, 0.999),
+    )
+    group.add_argument(
+        "--adam_eps",
+        type=float,
+        help="Epsilon for Adam/AdamW optimizer",
+        default=1e-8,
+    )
+    group.add_argument(
         "--lr",
         type=float,
         help="Learning rate",

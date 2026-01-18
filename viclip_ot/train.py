@@ -8,7 +8,6 @@ import torch
 import torch.nn as nn
 import torchvision.transforms.v2 as v2
 import wandb
-from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm.autonotebook import tqdm
 
@@ -404,7 +403,14 @@ def train_model(args: argparse.Namespace) -> None:
     assert not missing, f"Trainable params missing from optimizer: {len(missing)}"
     assert not extra, f"Frozen params included in optimizer: {len(extra)}"
 
-    optimizer = AdamW(param_groups)
+    optim_cls = None
+    if args.optimizer == "adam":
+        optim_cls = torch.optim.Adam
+    elif args.optimizer == "adamw":
+        optim_cls = torch.optim.AdamW
+    else:
+        raise ValueError(f"Unsupported optimizer: {args.optimizer}")
+    optimizer = optim_cls(param_groups, betas=args.adam_betas, eps=args.adam_eps)
 
     num_updates_per_epoch = (
         len(train_data_loader) + args.gradient_accum_steps - 1
