@@ -439,7 +439,7 @@ class HybridClipTPLoss(nn.Module):
         self,
         ot_start_epoch: int,
         ot_loss_lambda: float = 1.0,
-        sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
+        sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn_unbalanced",
     ):
         """
         Args:
@@ -462,6 +462,7 @@ class HybridClipTPLoss(nn.Module):
         epoch: int,
         logit_bias: Tensor | None = None,
         image_ids: Tensor | None = None,
+        sim_matrix: Tensor | None = None,
         output_dict: bool = False,
         reduction: str = "mean",
     ):
@@ -482,6 +483,7 @@ class HybridClipTPLoss(nn.Module):
                 logit_scale=logit_scale,
                 logit_bias=logit_bias,
                 output_dict=False,
+                sim_matrix=sim_matrix,
                 reduction=reduction,
             )
             total_loss = clip_loss_value + self.ot_loss_lambda * ot_loss_value
