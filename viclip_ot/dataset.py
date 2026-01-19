@@ -93,7 +93,10 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
 
             captions_by_image_id[image_id].append((annotation.id, annotation.caption))
 
-        self.caption_ids_list: list[list[int]] = []
+        # list of list of pair ids for each sample index
+        self.pair_ids_by_sample_index: list[list[int]] = []
+
+        # samples: (imag_id, image_path, list of captions)
         self.samples: list[tuple[int, str, list[str]]] = []
         pair_count = 0
         for image_id in sorted(captions_by_image_id.keys()):
@@ -102,21 +105,23 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
             image_path = os.path.join(self.root_dir, self.id_to_image_path[image_id])
             self.samples.append((image_id, image_path, captions))
 
-            self.caption_ids_list.append(list(range(pair_count, pair_count + len(captions))))
+            self.pair_ids_by_sample_index.append(
+                list(range(pair_count, pair_count + len(captions)))
+            )
             pair_count += len(captions)
 
-    def get_caption_ids(self, indices: list[int]) -> list[int]:
-        caption_ids: list[int] = []
-        for idx in indices:
-            caption_ids.extend(self.caption_ids_list[idx])
-        return caption_ids
+    def get_pair_ids(self, indices: list[int]) -> list[int]:
+        """
+        Given a list of sample indices, return the corresponding list of pair ids.
 
-    def get_image_ids(self, indices: list[int]) -> list[int]:
-        image_ids: list[int] = []
+        This is useful for retrieving caption (and image) embeddings
+        from some pre-computed embedding matrix.
+        """
+        p_ids: list[int] = []
         for idx in indices:
-            image_id, _, _ = self.samples[idx]
-            image_ids.extend([image_id] * len(self.caption_ids_list[idx]))
-        return image_ids
+            p_ids.extend(self.pair_ids_by_sample_index[idx])
+
+        return p_ids
 
     def __len__(self):
         return len(self.samples)
@@ -179,9 +184,6 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
                 f"Invalid model_fmt: {self.model_fmt}. "
                 f"Expected one of ['gemma', 'e5', 'qwen3', 'bge', 'sbert']"
             )
-
-        # Print first caption for debugging
-        # logger.debug(f"Image ID {image_id} first caption: {formatted_captions[0]}")
 
         return image, formatted_captions, int(image_id), idx
 

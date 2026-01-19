@@ -123,7 +123,6 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         choices=[
             "sinkhorn",
             "sinkhorn_unbalanced",
-            # "entropic_fused_gromov",
         ],
         default="sinkhorn_unbalanced",
     )
@@ -145,7 +144,7 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--sim_graph_alpha",
         type=float,
-        help="Alpha value for similarity graph regularized OT",
+        help="Weight for image embeddings for similarity graph regularized OT. The weight for text embeddings is (1 - sim_graph_alpha)",
         default=0.5,
     )
     group.add_argument(

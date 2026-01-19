@@ -68,6 +68,7 @@ def train_model(args: argparse.Namespace) -> None:
 
     # loss fun
     caption_embeddings = None
+    image_embeddings = None
     if args.sim_graph_regularized_ot and args.criterion in (
         "batch_level_entropic_ot_loss",
         "hybrid_clip_tp_loss",
@@ -100,18 +101,15 @@ def train_model(args: argparse.Namespace) -> None:
         logger.info(
             f"Using similarity graph regularized OT with precomputed image embeddings from {args.precomputed_image_embeddings_path}.",
         )
-        image_embeddings = torch.load(
-            args.precomputed_image_embeddings_path, map_location=device
-        )
+        image_embeddings = torch.load(args.precomputed_image_embeddings_path, map_location=device)
 
         logger.info(
             f"Loaded caption embeddings with shape {caption_embeddings.shape} "
             f"and image embeddings with shape {image_embeddings.shape}."
         )
 
-        sim_graph_alpha = args.sim_graph_alpha
         logger.info(
-            f"Using precomputed similarity graph with alpha = {sim_graph_alpha}."
+            f"Using precomputed similarity graph with alpha (image embeddings weight) = {args.sim_graph_alpha}."
         )
 
     if args.criterion == "clip_loss":
@@ -575,26 +573,20 @@ def train_model(args: argparse.Namespace) -> None:
                 text_inputs = batches[0]["text_inputs"].to(device=device, non_blocking=True)
                 image_ids = batches[0]["image_ids"]
 
-                if isinstance(
-                    criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                if (
+                    isinstance(
+                        criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                    )
+                    and caption_embeddings is not None
+                    and image_embeddings is not None
                 ):
                     sample_indices = batches[0]["indices"]
-                    caption_ids = train_data_loader.dataset.get_caption_ids(sample_indices)  # pyright: ignore
-                    image_ids = train_data_loader.dataset.get_image_ids(sample_indices)  # pyright: ignore
+                    pair_ids = train_data_loader.dataset.get_pair_ids(sample_indices)  # pyright: ignore
 
-                    assert len(caption_ids) == len(image_ids), (
-                        f"Number of caption ids ({len(caption_ids)}) does not match "
-                        f"number of image ids ({len(image_ids)}) in the batch."
-                    )
-
-                    # sim_matrix = (
-                    #     (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
-                    #     + sim_graph_alpha * (image_embeddings[image_ids] @ image_embeddings[image_ids].t())
-                    # )
-
-                    sim_matrix = (
-                        (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
-                        + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
+                    sim_matrix = (1 - args.sim_graph_alpha) * (
+                        caption_embeddings[pair_ids] @ caption_embeddings[pair_ids].t()
+                    ) + args.sim_graph_alpha * (
+                        image_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
@@ -621,7 +613,6 @@ def train_model(args: argparse.Namespace) -> None:
                     for batch in batches:
                         images = batch["images"].to(device=device, non_blocking=True)
                         text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
-                        image_ids = batch["image_ids"]
                         with autocast_context:
                             model_outputs = model(images, text_inputs)
                             for key in ("logit_scale", "logit_bias"):
@@ -633,26 +624,20 @@ def train_model(args: argparse.Namespace) -> None:
 
                 all_image_ids = torch.cat([batch["image_ids"] for batch in batches], dim=0)
 
-                if isinstance(
-                    criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                if (
+                    isinstance(
+                        criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                    )
+                    and caption_embeddings is not None
+                    and image_embeddings is not None
                 ):
                     all_indices = [idx for batch in batches for idx in batch["indices"]]
-                    caption_ids = train_data_loader.dataset.get_caption_ids(all_indices)  # pyright: ignore
-                    image_ids = train_data_loader.dataset.get_image_ids(all_indices)  # pyright: ignore
+                    pair_ids = train_data_loader.dataset.get_pair_ids(all_indices)  # pyright: ignore
 
-                    assert len(caption_ids) == len(image_ids), (
-                        f"Number of caption ids ({len(caption_ids)}) does not match "
-                        f"number of image ids ({len(image_ids)}) in the accumulated batches."
-                    )
-
-                    # sim_matrix = (
-                    #     (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
-                    #     + sim_graph_alpha * (image_embeddings[image_ids] @ image_embeddings[image_ids].t())
-                    # )
-
-                    sim_matrix = (
-                        (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
-                        + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
+                    sim_matrix = (1 - args.sim_graph_alpha) * (
+                        caption_embeddings[pair_ids] @ caption_embeddings[pair_ids].t()
+                    ) + args.sim_graph_alpha * (
+                        image_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
