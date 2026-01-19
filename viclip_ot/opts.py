@@ -167,6 +167,12 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default=3.0,
     )
     group.add_argument(
+        "--sim_sparse_threshold_quantile",
+        type=float,
+        help="Quantile value (between 0 and 1) for sparse thresholding when using 'sparse_thresholding' as sim_combine_method",
+        default=0.5,
+    )
+    group.add_argument(
         "--hybrid_clip_tp_loss_start_epoch",
         type=int,
         help="Epoch to start applying OT loss in HybridClipTPLoss (1-based)",
