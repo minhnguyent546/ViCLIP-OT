@@ -6,11 +6,12 @@ import os
 
 import torch
 from loguru import logger
-from PIL import Image
+from PIL import Image, ImageFile
 from pydantic import BaseModel
 from qwen3_vl_embedding import Qwen3VLEmbedder
 from tqdm.autonotebook import tqdm
 
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class ImageTextDataImage(BaseModel):
     id: int

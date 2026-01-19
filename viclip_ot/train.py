@@ -587,9 +587,14 @@ def train_model(args: argparse.Namespace) -> None:
                         f"number of image ids ({len(image_ids)}) in the batch."
                     )
 
+                    # sim_matrix = (
+                    #     (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
+                    #     + sim_graph_alpha * (image_embeddings[image_ids] @ image_embeddings[image_ids].t())
+                    # )
+
                     sim_matrix = (
                         (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
-                        + sim_graph_alpha * (image_embeddings[image_ids] @ image_embeddings[image_ids].t())
+                        + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
@@ -640,9 +645,14 @@ def train_model(args: argparse.Namespace) -> None:
                         f"number of image ids ({len(image_ids)}) in the accumulated batches."
                     )
 
+                    # sim_matrix = (
+                    #     (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
+                    #     + sim_graph_alpha * (image_embeddings[image_ids] @ image_embeddings[image_ids].t())
+                    # )
+
                     sim_matrix = (
                         (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
-                        + sim_graph_alpha * (image_embeddings[image_ids] @ image_embeddings[image_ids].t())
+                        + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
