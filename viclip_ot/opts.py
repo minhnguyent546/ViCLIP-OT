@@ -152,13 +152,19 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         "--sim_combine_method",
         type=str,
         help="Method to combine similarity graphs from image and text modalities",
-        choices=["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding"],
+        choices=["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding", "minimum", "power_mean", "arithmetic_mean"],
         default="weighted_sum",
     )
     group.add_argument(
         "--do_sim_graph_clamp",
         action="store_true",
         help="Whether to clamp similarity graph values to be non-negative",
+    )
+    group.add_argument(
+        "--sim_power_mean_exponent",
+        type=float,
+        help="Exponent p for power mean when using 'power_mean' as sim_combine_method",
+        default=3.0,
     )
     group.add_argument(
         "--hybrid_clip_tp_loss_start_epoch",

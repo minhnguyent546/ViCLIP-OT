@@ -122,7 +122,7 @@ def train_model(args: argparse.Namespace) -> None:
         sim_matrix_image: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Method to combine similarity graphs from image and text modalities: ["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding"]
+        Method to combine similarity graphs from image and text modalities: ["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding", "minimum", "power_mean", "arithmetic_mean"]
         """
         print(f"Combining similarity matrices using method: {sim_combine_method}")
         if sim_combine_method == "weighted_sum":
@@ -142,6 +142,13 @@ def train_model(args: argparse.Namespace) -> None:
             threshold = torch.quantile(combined_sim, args.sim_sparse_threshold_quantile)
             combined_sim[combined_sim < threshold] = 0.0
             return combined_sim
+        elif sim_combine_method == "minimum":
+            return torch.minimum(sim_matrix_text, sim_matrix_image)
+        elif sim_combine_method == "power_mean":
+            p = args.sim_power_mean_exponent # e.g., p=3
+            return ((sim_matrix_text ** p + sim_matrix_image ** p) / 2) ** (1 / p)
+        elif sim_combine_method == "arithmetic_mean":
+            return (sim_matrix_text + sim_matrix_image) / 2
         else:
             raise ValueError(f"Unsupported sim_combine_method: {sim_combine_method}")
 
