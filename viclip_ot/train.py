@@ -68,6 +68,8 @@ def train_model(args: argparse.Namespace) -> None:
 
     # loss fun
     caption_embeddings = None
+    image_embeddings = None
+    sim_graph_alpha = None
     if args.sim_graph_regularized_ot and args.criterion in (
         "batch_level_entropic_ot_loss",
         "hybrid_clip_tp_loss",
@@ -86,7 +88,7 @@ def train_model(args: argparse.Namespace) -> None:
         )
         caption_embeddings = torch.load(
             args.precomputed_caption_embeddings_path, map_location=device
-        )
+        ) # already normalized
 
         if (
             args.precomputed_image_embeddings_path is None
@@ -102,7 +104,7 @@ def train_model(args: argparse.Namespace) -> None:
         )
         image_embeddings = torch.load(
             args.precomputed_image_embeddings_path, map_location=device
-        )
+        ) # already normalized
 
         logger.info(
             f"Loaded caption embeddings with shape {caption_embeddings.shape} "
@@ -113,6 +115,35 @@ def train_model(args: argparse.Namespace) -> None:
         logger.info(
             f"Using precomputed similarity graph with alpha = {sim_graph_alpha}."
         )
+
+    sim_combine_method = args.sim_combine_method
+    def _combine_sim_matrices(
+        sim_matrix_text: torch.Tensor,
+        sim_matrix_image: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Method to combine similarity graphs from image and text modalities: ["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding"]
+        """
+        print(f"Combining similarity matrices using method: {sim_combine_method}")
+        if sim_combine_method == "weighted_sum":
+            if sim_graph_alpha is None:
+                raise ValueError("sim_graph_alpha must be provided for weighted_sum method.")
+            return (1 - sim_graph_alpha) * sim_matrix_text + sim_graph_alpha * sim_matrix_image
+        elif sim_combine_method == "geometric_mean":
+            return torch.sqrt(sim_matrix_text * sim_matrix_image)
+        elif sim_combine_method == "maximum":
+            return torch.maximum(sim_matrix_text, sim_matrix_image)
+        elif sim_combine_method == "harmonic_mean":
+            return 2 * (sim_matrix_text * sim_matrix_image) / (sim_matrix_text + sim_matrix_image + 1e-8)
+        elif sim_combine_method == "sparse_thresholding":
+            if sim_graph_alpha is None:
+                raise ValueError("sim_graph_alpha must be provided for sparse_thresholding method.")
+            combined_sim = (1 - sim_graph_alpha) * sim_matrix_text + sim_graph_alpha * sim_matrix_image
+            threshold = torch.quantile(combined_sim, args.sim_sparse_threshold_quantile)
+            combined_sim[combined_sim < threshold] = 0.0
+            return combined_sim
+        else:
+            raise ValueError(f"Unsupported sim_combine_method: {sim_combine_method}")
 
     if args.criterion == "clip_loss":
         criterion = losses.ClipLoss()
@@ -592,10 +623,19 @@ def train_model(args: argparse.Namespace) -> None:
                     #     + sim_graph_alpha * (image_embeddings[image_ids] @ image_embeddings[image_ids].t())
                     # )
 
-                    sim_matrix = (
-                        (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
-                        + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
+                    # sim_matrix = (
+                    #     (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
+                    #     + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
+                    # )
+
+                    sim_matrix_text = caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t()
+                    sim_matrix_image = image_embeddings[caption_ids] @ image_embeddings[caption_ids].t()
+
+                    sim_matrix = _combine_sim_matrices(
+                        sim_matrix_text,
+                        sim_matrix_image,
                     )
+
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
                 with autocast_context:
@@ -650,10 +690,19 @@ def train_model(args: argparse.Namespace) -> None:
                     #     + sim_graph_alpha * (image_embeddings[image_ids] @ image_embeddings[image_ids].t())
                     # )
 
-                    sim_matrix = (
-                        (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
-                        + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
+                    # sim_matrix = (
+                    #     (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
+                    #     + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
+                    # )
+
+                    sim_matrix_text = caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t()
+                    sim_matrix_image = image_embeddings[caption_ids] @ image_embeddings[caption_ids].t()
+
+                    sim_matrix = _combine_sim_matrices(
+                        sim_matrix_text,
+                        sim_matrix_image,
                     )
+
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
                 accum_num_samples = 0

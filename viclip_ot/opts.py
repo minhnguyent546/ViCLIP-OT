@@ -149,6 +149,13 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default=0.5,
     )
     group.add_argument(
+        "--sim_combine_method",
+        type=str,
+        help="Method to combine similarity graphs from image and text modalities",
+        choices=["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding"],
+        default="weighted_sum",
+    )
+    group.add_argument(
         "--hybrid_clip_tp_loss_start_epoch",
         type=int,
         help="Epoch to start applying OT loss in HybridClipTPLoss (1-based)",
