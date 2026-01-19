@@ -636,7 +636,8 @@ def train_model(args: argparse.Namespace) -> None:
                         sim_matrix_image,
                     )
 
-                    sim_matrix = sim_matrix.clamp(min=0) # make sure non-negative
+                    if args.do_sim_graph_clamp:
+                        sim_matrix = sim_matrix.clamp(min=0) # make sure non-negative
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
                 with autocast_context:
@@ -704,7 +705,8 @@ def train_model(args: argparse.Namespace) -> None:
                         sim_matrix_image,
                     )
 
-                    sim_matrix = sim_matrix.clamp(min=0) # make sure non-negative
+                    if args.do_sim_graph_clamp:
+                        sim_matrix = sim_matrix.clamp(min=0) # make sure non-negative
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
                 accum_num_samples = 0

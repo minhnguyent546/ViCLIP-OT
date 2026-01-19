@@ -156,6 +156,11 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default="weighted_sum",
     )
     group.add_argument(
+        "--do_sim_graph_clamp",
+        action="store_true",
+        help="Whether to clamp similarity graph values to be non-negative",
+    )
+    group.add_argument(
         "--hybrid_clip_tp_loss_start_epoch",
         type=int,
         help="Epoch to start applying OT loss in HybridClipTPLoss (1-based)",
