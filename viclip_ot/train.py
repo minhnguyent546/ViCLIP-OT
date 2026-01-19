@@ -622,7 +622,8 @@ def train_model(args: argparse.Namespace) -> None:
                     all_indices = [idx for batch in batches for idx in batch["indices"]]
                     caption_ids = train_data_loader.dataset.get_caption_ids(all_indices)  # pyright: ignore
                     sim_matrix = (
-                        caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].T
+                        (1 - sim_graph_alpha) * caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t()
+                        + sim_graph_alpha * image_embeddings[caption_ids] @ image_embeddings[caption_ids].t()
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
