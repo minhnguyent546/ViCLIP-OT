@@ -6,10 +6,10 @@ import os
 
 import torch
 from loguru import logger
+from PIL import Image
 from pydantic import BaseModel
-from tqdm.autonotebook import tqdm
-
 from qwen3_vl_embedding import Qwen3VLEmbedder
+from tqdm.autonotebook import tqdm
 
 
 class ImageTextDataImage(BaseModel):
@@ -121,19 +121,23 @@ def compute_embeddings(args: argparse.Namespace) -> None:
     ordered_samples_image = [{"image": image_path} for image_path, _, _, _ in samples]
     ordered_samples_caption = [{"text": caption} for _, _, _, caption in samples]
 
+    # ordered_samples_image_pil = []
+    # for sample in ordered_samples_image:
+    #     image_path = sample["image"]
+
+    #     try:
+    #         image = Image.open(image_path)
+    #         # handle palette images with transparency
+    #         if image.mode == "P" and "transparency" in image.info:
+    #             image = image.convert("RGBA")
+
+    #         image = image.convert("RGB")
+    #         ordered_samples_image_pil.append({"image": image})
+    #     except Exception as e:
+    #         logger.error(f"Error loading image {image_path}: {e}")
+    #         raise e
+
     with torch.inference_mode():
-        for i in tqdm(range(0, len(ordered_samples_image), args.batch_size)):
-            batch_image = ordered_samples_image[i : i + args.batch_size]
-
-            batch_image_embeddings = model.process(
-                batch_image,
-                normalize=args.normalize,
-            )
-            if i == 0:
-                image_embeddings = batch_image_embeddings
-            else:
-                image_embeddings = torch.cat((image_embeddings, batch_image_embeddings), dim=0)
-
         for i in tqdm(range(0, len(ordered_samples_caption), args.batch_size)):
             batch_caption = ordered_samples_caption[i : i + args.batch_size]
             batch_caption_embeddings = model.process(
@@ -146,6 +150,39 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 caption_embeddings = torch.cat(
                     (caption_embeddings, batch_caption_embeddings), dim=0
                 )
+
+        for i in tqdm(range(0, len(ordered_samples_image), args.batch_size)):
+            batch_image = ordered_samples_image[i : i + args.batch_size]
+
+            batch_image_pil = []
+            for sample in batch_image:
+                image_path = sample["image"]
+
+                try:
+                    image = Image.open(image_path)
+                    # handle palette images with transparency
+                    if image.mode == "P" and "transparency" in image.info:
+                        image = image.convert("RGBA")
+
+                    image = image.convert("RGB")
+                    batch_image_pil.append({"image": image})
+                except Exception as e:
+                    logger.error(f"Error loading image {image_path}: {e}")
+                    raise e
+
+            batch_image_embeddings = model.process(
+                batch_image_pil,
+                normalize=args.normalize,
+            )
+
+            del batch_image_pil # free up memory
+
+            if i == 0:
+                image_embeddings = batch_image_embeddings
+            else:
+                image_embeddings = torch.cat((image_embeddings, batch_image_embeddings), dim=0)
+
+            del batch_image_embeddings # free up memory
 
     caption_embeddings = caption_embeddings.cpu()
     image_embeddings = image_embeddings.cpu()
