@@ -121,9 +121,11 @@ def train_model(args: argparse.Namespace) -> None:
     def _combine_sim_matrices(
         sim_matrix_text: torch.Tensor,
         sim_matrix_image: torch.Tensor,
+        sim_matrix_text2image: torch.Tensor | None = None,
+        sim_matrix_image2text: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
-        Method to combine similarity graphs from image and text modalities: ["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding", "minimum", "power_mean", "arithmetic_mean"]
+        Method to combine similarity graphs from image and text modalities: ["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding", "minimum", "power_mean", "arithmetic_mean", "cross_modality"]
         """
         if sim_combine_method == "weighted_sum":
             if sim_graph_alpha is None:
@@ -149,6 +151,17 @@ def train_model(args: argparse.Namespace) -> None:
             return ((sim_matrix_text ** p + sim_matrix_image ** p) / 2) ** (1 / p)
         elif sim_combine_method == "arithmetic_mean":
             return (sim_matrix_text + sim_matrix_image) / 2
+        elif sim_combine_method == "cross_modality":
+            # 1/4 * (text-text + image-image + text-image + image-text)
+            assert sim_matrix_text2image is not None and sim_matrix_image2text is not None, (
+                "sim_matrix_text2image and sim_matrix_image2text must be provided for cross_modality method."
+            )
+            return 0.25 * (
+                sim_matrix_text
+                + sim_matrix_image
+                + sim_matrix_text2image
+                + sim_matrix_image2text
+            )
         else:
             raise ValueError(f"Unsupported sim_combine_method: {sim_combine_method}")
 
@@ -638,9 +651,14 @@ def train_model(args: argparse.Namespace) -> None:
                     sim_matrix_text = caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t()
                     sim_matrix_image = image_embeddings[caption_ids] @ image_embeddings[caption_ids].t()
 
+                    sim_matrix_text2image = caption_embeddings[caption_ids] @ image_embeddings[caption_ids].t()
+                    sim_matrix_image2text = image_embeddings[caption_ids] @ caption_embeddings[caption_ids].t()
+
                     sim_matrix = _combine_sim_matrices(
                         sim_matrix_text,
                         sim_matrix_image,
+                        sim_matrix_text2image,
+                        sim_matrix_image2text,
                     )
 
                     if args.do_sim_graph_clamp:
@@ -708,9 +726,14 @@ def train_model(args: argparse.Namespace) -> None:
                     sim_matrix_text = caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t()
                     sim_matrix_image = image_embeddings[caption_ids] @ image_embeddings[caption_ids].t()
 
+                    sim_matrix_text2image = caption_embeddings[caption_ids] @ image_embeddings[caption_ids].t()
+                    sim_matrix_image2text = image_embeddings[caption_ids] @ caption_embeddings[caption_ids].t()
+
                     sim_matrix = _combine_sim_matrices(
                         sim_matrix_text,
                         sim_matrix_image,
+                        sim_matrix_text2image,
+                        sim_matrix_image2text,
                     )
 
                     if args.do_sim_graph_clamp:

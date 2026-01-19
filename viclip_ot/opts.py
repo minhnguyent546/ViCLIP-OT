@@ -152,8 +152,8 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         "--sim_combine_method",
         type=str,
         help="Method to combine similarity graphs from image and text modalities",
-        choices=["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding", "minimum", "power_mean", "arithmetic_mean"],
-        default="weighted_sum",
+        choices=["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding", "minimum", "power_mean", "arithmetic_mean", "cross_modality"],
+        default="cross_modality",
     )
     group.add_argument(
         "--do_sim_graph_clamp",
