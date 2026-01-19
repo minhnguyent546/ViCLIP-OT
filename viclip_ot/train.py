@@ -580,9 +580,16 @@ def train_model(args: argparse.Namespace) -> None:
                 ):
                     sample_indices = batches[0]["indices"]
                     caption_ids = train_data_loader.dataset.get_caption_ids(sample_indices)  # pyright: ignore
+                    image_ids = train_data_loader.dataset.get_image_ids(sample_indices)  # pyright: ignore
+
+                    assert len(caption_ids) == len(image_ids), (
+                        f"Number of caption ids ({len(caption_ids)}) does not match "
+                        f"number of image ids ({len(image_ids)}) in the batch."
+                    )
+
                     sim_matrix = (
                         (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
-                        + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
+                        + sim_graph_alpha * (image_embeddings[image_ids] @ image_embeddings[image_ids].t())
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
@@ -626,9 +633,16 @@ def train_model(args: argparse.Namespace) -> None:
                 ):
                     all_indices = [idx for batch in batches for idx in batch["indices"]]
                     caption_ids = train_data_loader.dataset.get_caption_ids(all_indices)  # pyright: ignore
+                    image_ids = train_data_loader.dataset.get_image_ids(all_indices)  # pyright: ignore
+
+                    assert len(caption_ids) == len(image_ids), (
+                        f"Number of caption ids ({len(caption_ids)}) does not match "
+                        f"number of image ids ({len(image_ids)}) in the accumulated batches."
+                    )
+
                     sim_matrix = (
                         (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
-                        + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
+                        + sim_graph_alpha * (image_embeddings[image_ids] @ image_embeddings[image_ids].t())
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 

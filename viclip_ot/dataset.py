@@ -111,6 +111,13 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
             caption_ids.extend(self.caption_ids_list[idx])
         return caption_ids
 
+    def get_image_ids(self, indices: list[int]) -> list[int]:
+        image_ids: list[int] = []
+        for idx in indices:
+            image_id, _, _ = self.samples[idx]
+            image_ids.extend([image_id] * len(self.caption_ids_list[idx]))
+        return image_ids
+
     def __len__(self):
         return len(self.samples)
 
