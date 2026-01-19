@@ -117,6 +117,7 @@ def train_model(args: argparse.Namespace) -> None:
         )
 
     sim_combine_method = args.sim_combine_method
+    print(f"#### Combining similarity matrices using method: {sim_combine_method}")
     def _combine_sim_matrices(
         sim_matrix_text: torch.Tensor,
         sim_matrix_image: torch.Tensor,
@@ -124,7 +125,6 @@ def train_model(args: argparse.Namespace) -> None:
         """
         Method to combine similarity graphs from image and text modalities: ["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding", "minimum", "power_mean", "arithmetic_mean"]
         """
-        print(f"Combining similarity matrices using method: {sim_combine_method}")
         if sim_combine_method == "weighted_sum":
             if sim_graph_alpha is None:
                 raise ValueError("sim_graph_alpha must be provided for weighted_sum method.")
