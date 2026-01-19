@@ -104,6 +104,11 @@ def train_model(args: argparse.Namespace) -> None:
             args.precomputed_image_embeddings_path, map_location=device
         )
 
+        logger.info(
+            f"Loaded caption embeddings with shape {caption_embeddings.shape} "
+            f"and image embeddings with shape {image_embeddings.shape}."
+        )
+
         sim_graph_alpha = args.sim_graph_alpha
         logger.info(
             f"Using precomputed similarity graph with alpha = {sim_graph_alpha}."
@@ -576,8 +581,8 @@ def train_model(args: argparse.Namespace) -> None:
                     sample_indices = batches[0]["indices"]
                     caption_ids = train_data_loader.dataset.get_caption_ids(sample_indices)  # pyright: ignore
                     sim_matrix = (
-                        (1 - sim_graph_alpha) * caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t()
-                        + sim_graph_alpha * image_embeddings[caption_ids] @ image_embeddings[caption_ids].t()
+                        (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
+                        + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
@@ -622,8 +627,8 @@ def train_model(args: argparse.Namespace) -> None:
                     all_indices = [idx for batch in batches for idx in batch["indices"]]
                     caption_ids = train_data_loader.dataset.get_caption_ids(all_indices)  # pyright: ignore
                     sim_matrix = (
-                        (1 - sim_graph_alpha) * caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t()
-                        + sim_graph_alpha * image_embeddings[caption_ids] @ image_embeddings[caption_ids].t()
+                        (1 - sim_graph_alpha) * (caption_embeddings[caption_ids] @ caption_embeddings[caption_ids].t())
+                        + sim_graph_alpha * (image_embeddings[caption_ids] @ image_embeddings[caption_ids].t())
                     )
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
