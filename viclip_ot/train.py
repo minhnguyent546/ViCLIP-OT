@@ -644,6 +644,7 @@ def train_model(args: argparse.Namespace) -> None:
                     )
 
                     if args.do_sim_graph_clamp:
+                        print("Clamping sim_matrix to be non-negative.")
                         sim_matrix = sim_matrix.clamp(min=0) # make sure non-negative
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
@@ -713,6 +714,7 @@ def train_model(args: argparse.Namespace) -> None:
                     )
 
                     if args.do_sim_graph_clamp:
+                        print("Clamping sim_matrix to be non-negative.")
                         sim_matrix = sim_matrix.clamp(min=0) # make sure non-negative
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
