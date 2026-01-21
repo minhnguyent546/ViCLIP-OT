@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 import time
 from datetime import datetime
 from typing import Literal
@@ -376,7 +377,7 @@ def train_model(args: argparse.Namespace) -> None:
         f"num_params: {utils.to_human_readable(num_model_params)} | num_trainable_params: {utils.to_human_readable(num_model_trainable_params)}"
     )
 
-    if args.run_test_only:
+    def _run_test_only() -> None:
         test_start_time = time.perf_counter()
         test_results = eval_model(
             model=model,
@@ -385,7 +386,7 @@ def train_model(args: argparse.Namespace) -> None:
             device=device,
         )
         test_elapsed_time = time.perf_counter() - test_start_time
-        print(
+        logger.info(
             "** Test results **\n"
             f"    loss: {test_results['loss']:0.6f}\n"
             "     Text to image:\n"
@@ -402,7 +403,9 @@ def train_model(args: argparse.Namespace) -> None:
             f"      i2t_median_rank: {test_results['i2t_median_rank']:0.6f}\n"
             f"    Elapsed time: {utils.to_hms(test_elapsed_time)}\n"
         )
-        return
+
+    if args.run_test_only:
+        return _run_test_only()
 
     assert checkpoint_dir is not None
 
@@ -581,7 +584,6 @@ def train_model(args: argparse.Namespace) -> None:
 
     # disable logging to stdout during training to avoid conflict with tqdm
     logger.remove(logger_init_config["stdout_id"])
-
     global_step = 0
     training_start_time = time.perf_counter()
     for epoch in range(args.num_epochs):
@@ -920,8 +922,29 @@ def train_model(args: argparse.Namespace) -> None:
             )
             break
 
+    logger.add(
+        sys.stdout,
+        format=logger_init_config["fmt"],
+        level=logger_init_config["level"],
+    )
     total_training_time = time.perf_counter() - training_start_time
     logger.info(f"Training time: {utils.to_hms(total_training_time)}")
+
+    if len(best_val_results.keys()) == 1:
+        best_metric_key = list(best_val_results.keys())[0]
+        best_metric_value, best_checkpoint_path = sorted(
+            best_val_results[best_metric_key], reverse=True
+        )[0]
+        logger.info(
+            f"Best checkpoint based on {best_metric_key}: {best_checkpoint_path} "
+            f"with value {best_metric_value:0.6f}"
+        )
+        logger.info("Loading best checkpoint for final evaluation on test set...")
+
+        checkpoint = torch.load(best_checkpoint_path, map_location=device, weights_only=False)
+        model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+
+        _run_test_only()
 
 
 def main():
