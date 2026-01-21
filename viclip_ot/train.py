@@ -70,7 +70,8 @@ def train_model(args: argparse.Namespace) -> None:
     # loss fun
     caption_embeddings = None
     image_embeddings = None
-    sim_graph_alpha = None
+    sim_graph_alpha = args.sim_graph_alpha
+    sim_combine_method = args.sim_combine_method
     if args.sim_graph_regularized_ot and args.criterion in (
         "batch_level_entropic_ot_loss",
         "hybrid_clip_tp_loss",
@@ -117,8 +118,6 @@ def train_model(args: argparse.Namespace) -> None:
         )
 
         logger.info(f"#### Combining similarity matrices using method: {args.sim_combine_method}")
-
-    sim_combine_method = args.sim_combine_method
 
     def _combine_sim_matrices(
         sim_matrix_text: torch.Tensor,
