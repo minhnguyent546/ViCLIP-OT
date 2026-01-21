@@ -355,18 +355,18 @@ class HybridClipTPLoss(nn.Module):
     def __init__(
         self,
         ot_start_epoch: int,
-        ot_loss_lambda: float = 1.0,
+        clip_loss_lambda: float = 1.0,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
     ):
         """
         Args:
             ot_start_epoch (int): Epoch to start applying the OT loss (0-based).
-            ot_loss_lambda (float): Weighting factor for the OT loss component (`total_loss = clip_loss + lambda * ot_loss`).
+            clip_loss_lambda (float): Weighting factor for the CLIP loss component (`total_loss = lambda * clip_loss + ot_loss`).
         """
         super().__init__()
 
         self.ot_start_epoch = ot_start_epoch
-        self.ot_loss_lambda = ot_loss_lambda
+        self.clip_loss_lambda = clip_loss_lambda
 
         self.clip_loss = ClipLoss()
         self.ot_loss = BatchLevelEntropicOTLoss(sinkhorn_solver=sinkhorn_solver)
@@ -403,7 +403,7 @@ class HybridClipTPLoss(nn.Module):
                 sim_matrix=sim_matrix,
                 reduction=reduction,
             )
-            total_loss = clip_loss_value + self.ot_loss_lambda * ot_loss_value
+            total_loss = self.clip_loss_lambda * clip_loss_value + ot_loss_value
         else:
             total_loss = clip_loss_value
 
