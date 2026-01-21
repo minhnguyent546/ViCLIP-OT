@@ -69,6 +69,7 @@ def train_model(args: argparse.Namespace) -> None:
     # loss fun
     caption_embeddings = None
     image_embeddings = None
+    sim_graph_alpha = None
     if args.sim_graph_regularized_ot and args.criterion in (
         "batch_level_entropic_ot_loss",
         "hybrid_clip_tp_loss",
@@ -87,7 +88,7 @@ def train_model(args: argparse.Namespace) -> None:
         )
         caption_embeddings = torch.load(
             args.precomputed_caption_embeddings_path, map_location=device
-        )
+        )  # already normalized
 
         if (
             args.precomputed_image_embeddings_path is None
@@ -101,7 +102,9 @@ def train_model(args: argparse.Namespace) -> None:
         logger.info(
             f"Using similarity graph regularized OT with precomputed image embeddings from {args.precomputed_image_embeddings_path}.",
         )
-        image_embeddings = torch.load(args.precomputed_image_embeddings_path, map_location=device)
+        image_embeddings = torch.load(
+            args.precomputed_image_embeddings_path, map_location=device
+        )  # already normalized
 
         logger.info(
             f"Loaded caption embeddings with shape {caption_embeddings.shape} "
@@ -111,6 +114,61 @@ def train_model(args: argparse.Namespace) -> None:
         logger.info(
             f"Using precomputed similarity graph with alpha (image embeddings weight) = {args.sim_graph_alpha}."
         )
+
+    sim_combine_method = args.sim_combine_method
+    print(f"#### Combining similarity matrices using method: {sim_combine_method}")
+
+    def _combine_sim_matrices(
+        sim_matrix_text: torch.Tensor,
+        sim_matrix_image: torch.Tensor,
+        sim_matrix_text2image: torch.Tensor | None = None,
+        sim_matrix_image2text: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Method to combine similarity graphs from image and text modalities: ["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding", "minimum", "power_mean", "arithmetic_mean", "cross_modality"]
+        """
+        if sim_combine_method == "weighted_sum":
+            if sim_graph_alpha is None:
+                raise ValueError("sim_graph_alpha must be provided for weighted_sum method.")
+            return (1 - sim_graph_alpha) * sim_matrix_text + sim_graph_alpha * sim_matrix_image
+        elif sim_combine_method == "geometric_mean":
+            return torch.sqrt(sim_matrix_text * sim_matrix_image)
+        elif sim_combine_method == "maximum":
+            return torch.maximum(sim_matrix_text, sim_matrix_image)
+        elif sim_combine_method == "harmonic_mean":
+            return (
+                2
+                * (sim_matrix_text * sim_matrix_image)
+                / (sim_matrix_text + sim_matrix_image + 1e-8)
+            )
+        elif sim_combine_method == "sparse_thresholding":
+            if sim_graph_alpha is None:
+                raise ValueError(
+                    "sim_graph_alpha must be provided for sparse_thresholding method."
+                )
+            combined_sim = (
+                1 - sim_graph_alpha
+            ) * sim_matrix_text + sim_graph_alpha * sim_matrix_image
+            threshold = torch.quantile(combined_sim, args.sim_sparse_threshold_quantile)
+            combined_sim[combined_sim < threshold] = 0.0
+            return combined_sim
+        elif sim_combine_method == "minimum":
+            return torch.minimum(sim_matrix_text, sim_matrix_image)
+        elif sim_combine_method == "power_mean":
+            p = args.sim_power_mean_exponent  # e.g., p=3
+            return ((sim_matrix_text**p + sim_matrix_image**p) / 2) ** (1 / p)
+        elif sim_combine_method == "arithmetic_mean":
+            return (sim_matrix_text + sim_matrix_image) / 2
+        elif sim_combine_method == "cross_modality":
+            # 1/4 * (text-text + image-image + text-image + image-text)
+            assert sim_matrix_text2image is not None and sim_matrix_image2text is not None, (
+                "sim_matrix_text2image and sim_matrix_image2text must be provided for cross_modality method."
+            )
+            return 0.25 * (
+                sim_matrix_text + sim_matrix_image + sim_matrix_text2image + sim_matrix_image2text
+            )
+        else:
+            raise ValueError(f"Unsupported sim_combine_method: {sim_combine_method}")
 
     if args.criterion == "clip_loss":
         criterion = losses.ClipLoss()
@@ -583,11 +641,28 @@ def train_model(args: argparse.Namespace) -> None:
                     sample_indices = batches[0]["indices"]
                     pair_ids = train_data_loader.dataset.get_pair_ids(sample_indices)  # pyright: ignore
 
-                    sim_matrix = (1 - args.sim_graph_alpha) * (
+                    sim_matrix_text = (
                         caption_embeddings[pair_ids] @ caption_embeddings[pair_ids].t()
-                    ) + args.sim_graph_alpha * (
-                        image_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
                     )
+                    sim_matrix_image = image_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
+
+                    sim_matrix_text2image = (
+                        caption_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
+                    )
+                    sim_matrix_image2text = (
+                        image_embeddings[pair_ids] @ caption_embeddings[pair_ids].t()
+                    )
+
+                    sim_matrix = _combine_sim_matrices(
+                        sim_matrix_text,
+                        sim_matrix_image,
+                        sim_matrix_text2image,
+                        sim_matrix_image2text,
+                    )
+
+                    if args.do_sim_graph_clamp:
+                        print("Clamping sim_matrix to be non-negative.")
+                        sim_matrix = sim_matrix.clamp(min=0)  # make sure non-negative
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
                 with autocast_context:
@@ -634,11 +709,28 @@ def train_model(args: argparse.Namespace) -> None:
                     all_indices = [idx for batch in batches for idx in batch["indices"]]
                     pair_ids = train_data_loader.dataset.get_pair_ids(all_indices)  # pyright: ignore
 
-                    sim_matrix = (1 - args.sim_graph_alpha) * (
+                    sim_matrix_text = (
                         caption_embeddings[pair_ids] @ caption_embeddings[pair_ids].t()
-                    ) + args.sim_graph_alpha * (
-                        image_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
                     )
+                    sim_matrix_image = image_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
+
+                    sim_matrix_text2image = (
+                        caption_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
+                    )
+                    sim_matrix_image2text = (
+                        image_embeddings[pair_ids] @ caption_embeddings[pair_ids].t()
+                    )
+
+                    sim_matrix = _combine_sim_matrices(
+                        sim_matrix_text,
+                        sim_matrix_image,
+                        sim_matrix_text2image,
+                        sim_matrix_image2text,
+                    )
+
+                    if args.do_sim_graph_clamp:
+                        print("Clamping sim_matrix to be non-negative.")
+                        sim_matrix = sim_matrix.clamp(min=0)  # make sure non-negative
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
                 accum_num_samples = 0

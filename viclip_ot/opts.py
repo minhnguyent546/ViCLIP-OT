@@ -148,6 +148,40 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default=0.5,
     )
     group.add_argument(
+        "--sim_combine_method",
+        type=str,
+        help="Method to combine similarity graphs from image and text modalities",
+        choices=[
+            "weighted_sum",
+            "geometric_mean",
+            "maximum",
+            "harmonic_mean",
+            "sparse_thresholding",
+            "minimum",
+            "power_mean",
+            "arithmetic_mean",
+            "cross_modality",
+        ],
+        default="cross_modality",
+    )
+    group.add_argument(
+        "--do_sim_graph_clamp",
+        action="store_true",
+        help="Whether to clamp similarity graph values to be non-negative",
+    )
+    group.add_argument(
+        "--sim_power_mean_exponent",
+        type=float,
+        help="Exponent p for power mean when using 'power_mean' as sim_combine_method",
+        default=3.0,
+    )
+    group.add_argument(
+        "--sim_sparse_threshold_quantile",
+        type=float,
+        help="Quantile value (between 0 and 1) for sparse thresholding when using 'sparse_thresholding' as sim_combine_method",
+        default=0.5,
+    )
+    group.add_argument(
         "--hybrid_clip_tp_loss_start_epoch",
         type=int,
         help="Epoch to start applying OT loss in HybridClipTPLoss (1-based)",
