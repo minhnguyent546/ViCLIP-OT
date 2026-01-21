@@ -153,7 +153,6 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         help="Method to combine similarity graphs from image and text modalities",
         choices=[
             "weighted_sum",
-            "geometric_mean",
             "maximum",
             "harmonic_mean",
             "sparse_thresholding",
@@ -163,11 +162,6 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
             "cross_modality",
         ],
         default="cross_modality",
-    )
-    group.add_argument(
-        "--do_sim_graph_clamp",
-        action="store_true",
-        help="Whether to clamp similarity graph values to be non-negative",
     )
     group.add_argument(
         "--sim_power_mean_exponent",

@@ -115,8 +115,9 @@ def train_model(args: argparse.Namespace) -> None:
             f"Using precomputed similarity graph with alpha (image embeddings weight) = {args.sim_graph_alpha}."
         )
 
+        logger.info(f"#### Combining similarity matrices using method: {args.sim_combine_method}")
+
     sim_combine_method = args.sim_combine_method
-    print(f"#### Combining similarity matrices using method: {sim_combine_method}")
 
     def _combine_sim_matrices(
         sim_matrix_text: torch.Tensor,
@@ -125,14 +126,12 @@ def train_model(args: argparse.Namespace) -> None:
         sim_matrix_image2text: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
-        Method to combine similarity graphs from image and text modalities: ["weighted_sum", "geometric_mean", "maximum", "harmonic_mean", "sparse_thresholding", "minimum", "power_mean", "arithmetic_mean", "cross_modality"]
+        Method to combine similarity graphs from image and text modalities: ["weighted_sum", "maximum", "harmonic_mean", "sparse_thresholding", "minimum", "power_mean", "arithmetic_mean", "cross_modality"]
         """
         if sim_combine_method == "weighted_sum":
             if sim_graph_alpha is None:
                 raise ValueError("sim_graph_alpha must be provided for weighted_sum method.")
             return (1 - sim_graph_alpha) * sim_matrix_text + sim_graph_alpha * sim_matrix_image
-        elif sim_combine_method == "geometric_mean":
-            return torch.sqrt(sim_matrix_text * sim_matrix_image)
         elif sim_combine_method == "maximum":
             return torch.maximum(sim_matrix_text, sim_matrix_image)
         elif sim_combine_method == "harmonic_mean":
@@ -487,16 +486,16 @@ def train_model(args: argparse.Namespace) -> None:
     extra = grouped - all_trainable
 
     if missing:
-        print("Missing trainable params:")
+        logger.error("Missing trainable params:")
         for n, p in model.named_parameters():
             if p.requires_grad and id(p) in missing:
-                print("  ", n)
+                logger.info("  ", n)
 
     if extra:
-        print("Frozen params in optimizer:")
+        logger.error("Frozen params in optimizer:")
         for n, p in model.named_parameters():
             if not p.requires_grad and id(p) in extra:
-                print("  ", n)
+                logger.info("  ", n)
 
     assert not missing, f"Trainable params missing from optimizer: {len(missing)}"
     assert not extra, f"Frozen params included in optimizer: {len(extra)}"
@@ -660,9 +659,6 @@ def train_model(args: argparse.Namespace) -> None:
                         sim_matrix_image2text,
                     )
 
-                    if args.do_sim_graph_clamp:
-                        print("Clamping sim_matrix to be non-negative.")
-                        sim_matrix = sim_matrix.clamp(min=0)  # make sure non-negative
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
                 with autocast_context:
@@ -728,9 +724,6 @@ def train_model(args: argparse.Namespace) -> None:
                         sim_matrix_image2text,
                     )
 
-                    if args.do_sim_graph_clamp:
-                        print("Clamping sim_matrix to be non-negative.")
-                        sim_matrix = sim_matrix.clamp(min=0)  # make sure non-negative
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
                 accum_num_samples = 0
