@@ -580,8 +580,6 @@ def train_model(args: argparse.Namespace) -> None:
     for epoch in range(args.num_epochs):
         model.train()
         criterion_kwargs = {}
-        if isinstance(criterion, losses.HybridClipTPLoss):
-            criterion_kwargs["epoch"] = epoch
 
         train_data_iter = iter(train_data_loader)
         total_num_samples = len(train_data_loader)

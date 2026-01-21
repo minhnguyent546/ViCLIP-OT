@@ -369,7 +369,6 @@ class HybridClipTPLoss(nn.Module):
         image_features: Tensor,
         text_features: Tensor,
         logit_scale: Tensor,
-        epoch: int,
         logit_bias: Tensor | None = None,
         image_ids: Tensor | None = None,
         sim_matrix: Tensor | None = None,
