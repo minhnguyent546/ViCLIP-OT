@@ -13,6 +13,7 @@ from tqdm.autonotebook import tqdm
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+
 class ImageTextDataImage(BaseModel):
     id: int
     image_path: str
@@ -176,14 +177,14 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 normalize=args.normalize,
             )
 
-            del batch_image_pil # free up memory
+            del batch_image_pil  # free up memory
 
             if i == 0:
                 image_embeddings = batch_image_embeddings
             else:
                 image_embeddings = torch.cat((image_embeddings, batch_image_embeddings), dim=0)
 
-            del batch_image_embeddings # free up memory
+            del batch_image_embeddings  # free up memory
 
     caption_embeddings = caption_embeddings.cpu()
     image_embeddings = image_embeddings.cpu()

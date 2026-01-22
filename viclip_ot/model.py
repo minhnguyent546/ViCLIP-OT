@@ -407,11 +407,17 @@ class TextEncoder(nn.Module):
             # https://huggingface.co/keepitreal/vietnamese-sbert
             # Mean Pooling - Take attention mask into account for correct averaging
             def __mean_pooling(model_output, attention_mask):
-                token_embeddings = model_output[0] # First element of model_output contains all token embeddings
-                input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-                return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+                token_embeddings = model_output[
+                    0
+                ]  # First element of model_output contains all token embeddings
+                input_mask_expanded = (
+                    attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+                )
+                return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(
+                    input_mask_expanded.sum(1), min=1e-9
+                )
 
-            sentence_embeddings = __mean_pooling(outputs, inputs['attention_mask'])
+            sentence_embeddings = __mean_pooling(outputs, inputs["attention_mask"])
 
             if normalize:
                 sentence_embeddings = Fun.normalize(sentence_embeddings, p=2, dim=1)
@@ -456,7 +462,6 @@ class TextEncoder(nn.Module):
                 last_hidden_state = Fun.normalize(last_hidden_state, p=2, dim=1)
 
             return last_hidden_state
-
 
         assert self.config.model_name == "google/embeddinggemma-300m", (
             "Only 'google/embeddinggemma-300m' model reaches this point."
