@@ -3,13 +3,16 @@
 import argparse
 import json
 import os
+import random
 
+import numpy as np
 import torch
 from loguru import logger
 from PIL import Image, ImageFile
 from pydantic import BaseModel
-from qwen3_vl_embedding import Qwen3VLEmbedder
 from tqdm.autonotebook import tqdm
+
+from qwen3_vl_embedding import Qwen3VLEmbedder
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -123,22 +126,6 @@ def compute_embeddings(args: argparse.Namespace) -> None:
     ordered_samples_image = [{"image": image_path} for image_path, _, _, _ in samples]
     ordered_samples_caption = [{"text": caption} for _, _, _, caption in samples]
 
-    # ordered_samples_image_pil = []
-    # for sample in ordered_samples_image:
-    #     image_path = sample["image"]
-
-    #     try:
-    #         image = Image.open(image_path)
-    #         # handle palette images with transparency
-    #         if image.mode == "P" and "transparency" in image.info:
-    #             image = image.convert("RGBA")
-
-    #         image = image.convert("RGB")
-    #         ordered_samples_image_pil.append({"image": image})
-    #     except Exception as e:
-    #         logger.error(f"Error loading image {image_path}: {e}")
-    #         raise e
-
     with torch.inference_mode():
         for i in tqdm(range(0, len(ordered_samples_caption), args.batch_size)):
             batch_caption = ordered_samples_caption[i : i + args.batch_size]
@@ -150,7 +137,8 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 caption_embeddings = batch_caption_embeddings
             else:
                 caption_embeddings = torch.cat(
-                    (caption_embeddings, batch_caption_embeddings), dim=0
+                    (caption_embeddings, batch_caption_embeddings),  # pyright: ignore
+                    dim=0,
                 )
 
         for i in tqdm(range(0, len(ordered_samples_image), args.batch_size)):
@@ -182,18 +170,31 @@ def compute_embeddings(args: argparse.Namespace) -> None:
             if i == 0:
                 image_embeddings = batch_image_embeddings
             else:
-                image_embeddings = torch.cat((image_embeddings, batch_image_embeddings), dim=0)
+                image_embeddings = torch.cat(
+                    (image_embeddings, batch_image_embeddings),  # pyright: ignore
+                    dim=0,
+                )
 
             del batch_image_embeddings  # free up memory
 
-    caption_embeddings = caption_embeddings.cpu()
-    image_embeddings = image_embeddings.cpu()
+    caption_embeddings = caption_embeddings.cpu()  # pyright: ignore
+    image_embeddings = image_embeddings.cpu()  # pyright: ignore
     # save to disk to load later for computing OT transport plan during training
     torch.save(image_embeddings, image_save_file_path)
     torch.save(caption_embeddings, caption_save_file_path)
 
     logger.info(f"Saved image embeddings to {image_save_file_path}")
     logger.info(f"Saved caption embeddings to {caption_save_file_path}")
+
+
+def set_seed(seed: int = 42) -> None:
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def main() -> None:
@@ -203,6 +204,8 @@ def main() -> None:
     )
     add_opts(parser)
     args = parser.parse_args()
+
+    set_seed(42)
 
     compute_embeddings(args)
 
