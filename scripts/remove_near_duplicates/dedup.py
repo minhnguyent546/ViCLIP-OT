@@ -146,6 +146,9 @@ def deduplicate_dataset(
     duplicate_image_ids = [int(new_image_ids[idx]) for idx in duplicate_indices]
     results = {
         "dataset_dir": dataset_dir,
+        "split_name": split_name,
+        "precomputed_dir": precomputed_dir,
+        "precomputed_split_name": precomputed_split_name,
         "threshold": float(threshold),
         "total_images": total_images,
         "timing": {
