@@ -39,6 +39,24 @@ def _add_model_and_dataset_opts(
         help="Path to the dataset",
         default="./data/UIT-OpenViIC",
     )
+    group.add_argument(
+        "--train_split_name",
+        type=str,
+        help="Training split name",
+        default="train",
+    )
+    group.add_argument(
+        "--test_split_name",
+        type=str,
+        help="Testing split name",
+        default="test",
+    )
+    group.add_argument(
+        "--val_split_name",
+        type=str,
+        help="Validation split name",
+        default="val",
+    )
     if is_training:
         group.add_argument(
             "--train_batch_size",

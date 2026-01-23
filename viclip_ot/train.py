@@ -254,19 +254,19 @@ def train_model(args: argparse.Namespace) -> None:
 
     train_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
-        metadata_json_file="train.json",
+        metadata_json_file=f"{args.train_split_name}.json",
         image_transforms=train_transforms,
         model_fmt=model_fmt(),
     )
     test_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
-        metadata_json_file="test.json",
+        metadata_json_file=f"{args.test_split_name}.json",
         image_transforms=eval_transforms,
         model_fmt=model_fmt(),
     )
     val_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
-        metadata_json_file="val.json",
+        metadata_json_file=f"{args.val_split_name}.json",
         image_transforms=eval_transforms,
         model_fmt=model_fmt(),
     )
