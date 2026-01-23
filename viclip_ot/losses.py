@@ -188,10 +188,19 @@ class BatchLevelEntropicOTLoss(nn.Module):
     def __init__(
         self,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn_unbalanced",
+        use_transport_plan_as_logits: bool = False,
     ):
+        """
+        In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,
+        the transport plan will be used as logits for computing the cross-entropy loss,
+        otherwise, use transport plan as soft labels.
+
+        If `sim_matrix` is provided in the forward pass, `use_transport_plan_as_logits` takes no effect.
+        """
+
         super().__init__()
         self.sinkhorn_solver = sinkhorn_solver
-        self.fgw_alpha = 0.5
+        self.use_transport_plan_as_logits = use_transport_plan_as_logits
 
         print(f"Using Sinkhorn Solver: {self.sinkhorn_solver}")
 
@@ -274,9 +283,16 @@ class BatchLevelEntropicOTLoss(nn.Module):
         logit_bias: Tensor | None = None,
         output_dict: bool = False,
         sim_matrix: Tensor | None = None,
+        image_ids: Tensor | None = None,
         reduction: str = "mean",
         **kwargs,
     ):
+        """
+        If `self.use_transport_plan_as_logits` is True (i.e., use transport plan as logits)
+        and `image_ids` is provided, the computation will take into account image with multiple captions,
+        meaning that labels for cross-entropy loss is **soft labels** and will be created based on `image_ids`
+        with equal weights for each caption.
+        """
         batch_size = image_features.shape[0]
 
         # enable gradient computation only if sim_matrix is provided
@@ -324,23 +340,51 @@ class BatchLevelEntropicOTLoss(nn.Module):
                     f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
                 )
         else:
-            logits_per_image, logits_per_text = self.get_logits(
-                image_features,
-                text_features,
-                logit_scale,
-                logit_bias=logit_bias,
-            )
+            device = image_features.device
+            if self.use_transport_plan_as_logits:
+                # use transport plan as logits
+                if image_ids is None:
+                    # 1-1 matching between image and text
+                    labels = torch.arange(batch_size, device=device, dtype=torch.int64)
 
-            loss_i2t = Fun.cross_entropy(
-                input=logits_per_image,
-                target=transport_plan,
-                reduction=reduction,
-            )
-            loss_t2i = Fun.cross_entropy(
-                input=logits_per_text,
-                target=transport_plan.T,
-                reduction=reduction,
-            )
+                    loss_i2t = Fun.cross_entropy(
+                        input=transport_plan, target=labels, reduction=reduction
+                    )
+                    loss_t2i = Fun.cross_entropy(
+                        input=transport_plan.T, target=labels, reduction=reduction
+                    )
+                else:
+                    image_ids = image_ids.to(device)
+                    # shape: (batch_size, batch_size)
+                    matches = image_ids.view(-1, 1) == image_ids.view(1, -1)
+
+                    # create soft labels (probs)
+                    soft_labels = matches.float()
+                    soft_labels = soft_labels / soft_labels.sum(dim=1, keepdim=True)
+                    loss_i2t = Fun.cross_entropy(transport_plan, soft_labels, reduction=reduction)
+                    loss_t2i = Fun.cross_entropy(
+                        transport_plan.T, soft_labels, reduction=reduction
+                    )
+            else:
+                # use transport plan as soft targets
+
+                logits_per_image, logits_per_text = self.get_logits(
+                    image_features,
+                    text_features,
+                    logit_scale,
+                    logit_bias=logit_bias,
+                )
+
+                loss_i2t = Fun.cross_entropy(
+                    input=logits_per_image,
+                    target=transport_plan,
+                    reduction=reduction,
+                )
+                loss_t2i = Fun.cross_entropy(
+                    input=logits_per_text,
+                    target=transport_plan.T,
+                    reduction=reduction,
+                )
 
         total_loss = (loss_i2t + loss_t2i) / 2
 
@@ -354,15 +398,28 @@ class HybridClipTPLoss(nn.Module):
 
     def __init__(
         self,
-        clip_loss_lambda: float = 1.0,
+        clip_loss_lambda: float = 0.1,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
+        use_transport_plan_as_logits: bool = False,
     ):
+        """
+        In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,
+        the transport plan will be used as logits for computing the cross-entropy loss,
+        otherwise, use transport plan as soft labels.
+
+        If `sim_matrix` is provided in the forward pass, `use_transport_plan_as_logits` takes no effect.
+        """
+
         super().__init__()
 
         self.clip_loss_lambda = clip_loss_lambda
+        self.use_transport_plan_as_logits = use_transport_plan_as_logits
 
         self.clip_loss = ClipLoss()
-        self.ot_loss = BatchLevelEntropicOTLoss(sinkhorn_solver=sinkhorn_solver)
+        self.ot_loss = BatchLevelEntropicOTLoss(
+            sinkhorn_solver=sinkhorn_solver,
+            use_transport_plan_as_logits=self.use_transport_plan_as_logits,
+        )
 
     def forward(
         self,
@@ -392,6 +449,7 @@ class HybridClipTPLoss(nn.Module):
             logit_bias=logit_bias,
             output_dict=False,
             sim_matrix=sim_matrix,
+            image_ids=image_ids,
             reduction=reduction,
         )
         total_loss = self.clip_loss_lambda * clip_loss_value + ot_loss_value

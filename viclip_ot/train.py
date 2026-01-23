@@ -173,15 +173,16 @@ def train_model(args: argparse.Namespace) -> None:
         criterion = losses.ClipLoss()
     elif args.criterion == "sig_lip_loss":
         criterion = losses.SigLipLoss()
-    elif args.criterion == "entropic_ot_loss":
-        # criterion = losses.HybridClipTPLoss()
-        raise NotImplementedError("Entropic OT loss is not implemented yet.")
     elif args.criterion == "batch_level_entropic_ot_loss":
-        criterion = losses.BatchLevelEntropicOTLoss(sinkhorn_solver=args.sinkhorn_solver)
+        criterion = losses.BatchLevelEntropicOTLoss(
+            sinkhorn_solver=args.sinkhorn_solver,
+            use_transport_plan_as_logits=args.use_transport_plan_as_logits,
+        )
     elif args.criterion == "hybrid_clip_tp_loss":
         criterion = losses.HybridClipTPLoss(
-            sinkhorn_solver=args.sinkhorn_solver,
             clip_loss_lambda=args.hybrid_clip_tp_loss_clip_loss_lambda,
+            sinkhorn_solver=args.sinkhorn_solver,
+            use_transport_plan_as_logits=args.use_transport_plan_as_logits,
         )
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")

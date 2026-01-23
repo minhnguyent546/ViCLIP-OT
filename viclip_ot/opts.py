@@ -117,6 +117,11 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default="clip_loss",
     )
     group.add_argument(
+        "--use_transport_plan_as_logits",
+        action="store_true",
+        help="Whether to use the transport plan as logits for computing cross-entropy loss in batch-level entropic OT loss, otherwise the transport plan is used as soft targets. Note that these two cases will only happen when `--sim_graph_regularized_ot` is not set.",
+    )
+    group.add_argument(
         "--sinkhorn_solver",
         type=str,
         help="Sinkhorn solver to use for OT losses",
@@ -179,7 +184,7 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         "--hybrid_clip_tp_loss_clip_loss_lambda",
         type=float,
         help="Lambda weight for CLIP loss in hybrid CLIP and TP loss (loss = lambda * CLIP_loss + OT_loss)",
-        default=1.0,
+        default=0.1,
     )
 
     group.add_argument(
