@@ -45,57 +45,51 @@ def find_duplicates_against_precomputed(
 
     logger.info(f"Loaded {len(new_embeddings)} new embeddings")
 
-    # Get all precomputed embedding files
-    precomputed_files = os.path.join(precomputed_dir, f"{precomputed_split_name}_embeddings.npy")
+    # Get precomputed embedding file
+    precomputed_file = os.path.join(precomputed_dir, f"{precomputed_split_name}_embeddings.npy")
 
     duplicate_indices = set()
     duplicate_details = []
     loading_time = 0.0
     similarity_time = 0.0
 
-    # Compare against each precomputed file
-    for i, precomputed_file in enumerate(precomputed_files):
-        logger.info(
-            f"Comparing against precomputed file {i + 1}/{len(precomputed_files)}: {os.path.basename(precomputed_file)}"
-        )
+    # Compare against precomputed file
+    # Time loading of precomputed embeddings and image_ids
+    with Timer("Loading precomputed embeddings") as load_timer:
+        precomputed_embeddings = np.load(precomputed_file)
+        # Load corresponding image_ids file
+        precomputed_image_ids_file = precomputed_file.replace("_embeddings.npy", "_image_ids.npy")
+        precomputed_image_ids = np.load(precomputed_image_ids_file)
 
-        # Time loading of precomputed embeddings and image_ids
-        with Timer("Loading precomputed embeddings") as load_timer:
-            precomputed_embeddings = np.load(precomputed_file)
-            # Load corresponding image_ids file
-            precomputed_image_ids_file = precomputed_file.replace(
-                "_embeddings.npy", "_image_ids.npy"
+    loading_time += load_timer.elapsed
+
+    # Process new embeddings in batches against this precomputed file
+    for batch_start in range(0, len(new_embeddings), batch_size):
+        batch_end = min(batch_start + batch_size, len(new_embeddings))
+        batch_embeddings = new_embeddings[batch_start:batch_end]
+
+        # Time similarity computation
+        with Timer("Computing similarities") as sim_timer:
+            similarities = cosine_similarity(batch_embeddings, precomputed_embeddings)
+            # Find duplicates above threshold
+            batch_indices, precomputed_indices = np.where(similarities >= threshold)
+        similarity_time += sim_timer.elapsed
+
+        # Record duplicates
+        for batch_idx, precomputed_idx in zip(batch_indices, precomputed_indices, strict=True):
+            global_idx = batch_start + batch_idx
+            duplicate_indices.add(global_idx)
+
+            duplicate_details.append(
+                {
+                    "new_idx": int(global_idx),
+                    "new_image_id": int(new_image_ids[global_idx]),
+                    "source_file": os.path.basename(precomputed_file),
+                    "source_idx": int(precomputed_idx),
+                    "source_image_id": int(precomputed_image_ids[precomputed_idx]),
+                    "similarity": float(similarities[batch_idx, precomputed_idx]),
+                }
             )
-            precomputed_image_ids = np.load(precomputed_image_ids_file)
-        loading_time += load_timer.elapsed
-
-        # Process new embeddings in batches against this precomputed file
-        for batch_start in range(0, len(new_embeddings), batch_size):
-            batch_end = min(batch_start + batch_size, len(new_embeddings))
-            batch_embeddings = new_embeddings[batch_start:batch_end]
-
-            # Time similarity computation
-            with Timer("Computing similarities") as sim_timer:
-                similarities = cosine_similarity(batch_embeddings, precomputed_embeddings)
-                # Find duplicates above threshold
-                batch_indices, precomputed_indices = np.where(similarities >= threshold)
-            similarity_time += sim_timer.elapsed
-
-            # Record duplicates
-            for batch_idx, precomputed_idx in zip(batch_indices, precomputed_indices, strict=True):
-                global_idx = batch_start + batch_idx
-                duplicate_indices.add(global_idx)
-
-                duplicate_details.append(
-                    {
-                        "new_idx": int(global_idx),
-                        "new_image_id": int(new_image_ids[global_idx]),
-                        "source_file": os.path.basename(precomputed_file),
-                        "source_idx": int(precomputed_idx),
-                        "source_image_id": int(precomputed_image_ids[precomputed_idx]),
-                        "similarity": float(similarities[batch_idx, precomputed_idx]),
-                    }
-                )
 
     return sorted(duplicate_indices), duplicate_details, loading_time, similarity_time
 
