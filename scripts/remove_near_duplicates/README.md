@@ -19,10 +19,10 @@ To pre-compute image embeddings for your dataset, run the following command:
 ```bash
 python scripts/remove_near_duplicates/compute_embeddings.py \
     --dataset_dir /path/to/your/dataset \
+    --split_name train \
     --output_dir /path/to/save/embeddings \
     --device auto \
-    --batch_size 32 \
-    --split_name train
+    --batch_size 32
 ```
 
 ## Find near-duplicate images
@@ -32,10 +32,11 @@ To compare your dataset against pre-computed embeddings and identify near-duplic
 ```bash
 python scripts/remove_near_duplicates/dedup.py \
     --dataset_dir /path/to/your/dataset \
+    --split_name test \
     --precomputed_dir /path/to/precomputed/embeddings \
+    --precomputed_split_name train \
     --threshold 0.9 \
     --output_dir /path/to/save/duplicates \
     --device auto \
     --batch_size 32 \
-    --split_name test
 ```
