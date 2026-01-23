@@ -3,7 +3,6 @@
 """Adapted from: https://github.com/huggingface/large-scale-image-deduplication/blob/main/dedup_dataset.py"""
 
 import argparse
-import glob
 import json
 import os
 import time
@@ -35,6 +34,7 @@ def find_duplicates_against_precomputed(
     new_embeddings_file: str,
     new_image_ids_file: str,
     precomputed_dir: str,
+    precomputed_split_name: str,
     batch_size: int = 32,
     threshold: float = 0.9,
 ):
@@ -46,8 +46,7 @@ def find_duplicates_against_precomputed(
     logger.info(f"Loaded {len(new_embeddings)} new embeddings")
 
     # Get all precomputed embedding files
-    precomputed_files = glob.glob(os.path.join(precomputed_dir, "*_embeddings.npy"))
-    logger.info(f"Found {len(precomputed_files)} precomputed embedding files")
+    precomputed_files = os.path.join(precomputed_dir, f"{precomputed_split_name}_embeddings.npy")
 
     duplicate_indices = set()
     duplicate_details = []
@@ -103,12 +102,13 @@ def find_duplicates_against_precomputed(
 
 def deduplicate_dataset(
     dataset_dir: str,
+    split_name: str,
     precomputed_dir: str,
+    precomputed_split_name: str,
     threshold: float = 0.9,
     output_dir: str = "duplicates",
     device="auto",
     batch_size: int = 32,
-    split_name: str = "test",
 ):
     """Deduplicate a dataset against precomputed embeddings with timing information."""
 
@@ -126,22 +126,26 @@ def deduplicate_dataset(
             )
 
         # Step 2: Find duplicate files
-        save_file_name = os.path.basename(tmp_embedding_dir.rstrip("/"))
-        new_embeddings_file = os.path.join(tmp_embedding_dir, f"{save_file_name}_embeddings.npy")
-        new_image_ids_file = os.path.join(tmp_embedding_dir, f"{save_file_name}_image_ids.npy")
+        new_embeddings_file = os.path.join(tmp_embedding_dir, f"{split_name}_embeddings.npy")
+        new_image_ids_file = os.path.join(tmp_embedding_dir, f"{split_name}_image_ids.npy")
 
         # Step 3: Find duplicates
         logger.info("Step 2: Finding duplicates against precomputed embeddings...")
         with Timer("Duplicate detection") as duplicate_timer:
             duplicate_indices, duplicate_details, loading_time, similarity_time = (
                 find_duplicates_against_precomputed(
-                    new_embeddings_file, new_image_ids_file, precomputed_dir, threshold=threshold
+                    new_embeddings_file=new_embeddings_file,
+                    new_image_ids_file=new_image_ids_file,
+                    precomputed_dir=precomputed_dir,
+                    precomputed_split_name=precomputed_split_name,
+                    batch_size=batch_size,
+                    threshold=threshold,
                 )
             )
 
     # Step 4: Save results (outside timer context to access elapsed times)
     os.makedirs(output_dir, exist_ok=True)
-    output_file = os.path.join(output_dir, f"duplicates_{save_file_name}.json")
+    output_file = os.path.join(output_dir, f"duplicates_{split_name}.json")
 
     new_image_ids = np.load(new_image_ids_file)
     total_images = int(len(new_image_ids))
@@ -195,10 +199,22 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         help="Path to the dataset directory",
     )
     parser.add_argument(
+        "--split_name",
+        type=str,
+        help="Dataset split to process",
+        default="train",
+    )
+    parser.add_argument(
         "--precomputed_dir",
         type=str,
         required=True,
         help="Directory containing precomputed embeddings",
+    )
+    parser.add_argument(
+        "--precomputed_split_name",
+        type=str,
+        required=True,
+        help="Split name for precomputed embeddings",
     )
     parser.add_argument(
         "--threshold",
@@ -225,12 +241,6 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         default=32,
         help="Batch size for processing",
     )
-    parser.add_argument(
-        "--split_name",
-        type=str,
-        help="Dataset split to process",
-        default="train",
-    )
 
 
 def main() -> None:
@@ -243,12 +253,13 @@ def main() -> None:
 
     deduplicate_dataset(
         dataset_dir=args.dataset_dir,
+        split_name=args.split_name,
         precomputed_dir=args.precomputed_dir,
+        precomputed_split_name=args.precomputed_split_name,
         threshold=args.threshold,
         output_dir=args.output_dir,
         device=args.device,
         batch_size=args.batch_size,
-        split_name=args.split_name,
     )
 
 

@@ -124,14 +124,14 @@ def create_transforms():
     )
 
 
-def compute_batch_embeddings(model, dataloader, device):
+def compute_batch_embeddings(model, dataloader, device, split_name: str):
     """Compute embeddings for all batches and return results with timing info."""
     embeddings_list = []
     image_ids = []
     model_inference_time = 0.0
 
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Computing embeddings"):
+        for batch in tqdm(dataloader, desc=f"Computing embeddings (split: {split_name})"):
             batch_images, batch_indices = batch
             batch_tensor = batch_images.to(device)
             start_model_time = time.time()
@@ -144,23 +144,22 @@ def compute_batch_embeddings(model, dataloader, device):
     return embeddings_list, image_ids, model_inference_time
 
 
-def save_results(embeddings, image_ids: list[int], output_dir: str):
+def save_results(embeddings, image_ids: list[int], output_dir: str, split_name: str):
     """Save embeddings and image IDs to files."""
     os.makedirs(output_dir, exist_ok=True)
-    save_file_name = os.path.basename(output_dir.rstrip("/"))
     # Include name in filename if provided
 
-    np.save(os.path.join(output_dir, f"{save_file_name}_embeddings.npy"), embeddings)
-    np.save(os.path.join(output_dir, f"{save_file_name}_image_ids.npy"), np.array(image_ids))
+    np.save(os.path.join(output_dir, f"{split_name}_embeddings.npy"), embeddings)
+    np.save(os.path.join(output_dir, f"{split_name}_image_ids.npy"), np.array(image_ids))
 
 
-def print_results(embeddings, total_time, model_inference_time, output_dir):
+def print_results(embeddings, total_time, model_inference_time, output_dir: str, split_name: str):
     """Print timing and result statistics."""
     num_embeddings = len(embeddings)
     time_per_sample = total_time / num_embeddings if num_embeddings > 0 else 0
     model_time_per_sample = model_inference_time / num_embeddings if num_embeddings > 0 else 0
 
-    logger.info(f"Saved {num_embeddings} embeddings to {output_dir}/")
+    logger.info(f"Saved {num_embeddings} embeddings for split {split_name} to {output_dir}/")
     logger.info(f"Embedding shape: {embeddings.shape}")
     logger.info(f"Total time: {total_time:.5f} seconds")
     logger.info(f"Time per sample: {time_per_sample:.5f} seconds")
@@ -170,10 +169,10 @@ def print_results(embeddings, total_time, model_inference_time, output_dir):
 
 def compute_embeddings(
     dataset_dir: str,
+    split_name: str,
     output_dir: str,
     device: str = "auto",
     batch_size: int = 32,
-    split_name: str = "train",
 ):
     """Compute embeddings for all images in a HuggingFace dataset."""
     function_start_time = time.time()
@@ -198,7 +197,10 @@ def compute_embeddings(
     # Compute embeddings
     start_time = time.time()
     embeddings_list, image_ids, model_inference_time = compute_batch_embeddings(
-        model, dataloader, device
+        model=model,
+        dataloader=dataloader,
+        device=device,
+        split_name=split_name,
     )
     end_time = time.time()
 
@@ -207,8 +209,19 @@ def compute_embeddings(
     total_time = end_time - start_time
 
     # Save and report results
-    save_results(all_embeddings, image_ids, output_dir)
-    print_results(all_embeddings, total_time, model_inference_time, output_dir)
+    save_results(
+        embeddings=all_embeddings,
+        image_ids=image_ids,
+        output_dir=output_dir,
+        split_name=split_name,
+    )
+    print_results(
+        embeddings=all_embeddings,
+        total_time=total_time,
+        model_inference_time=model_inference_time,
+        output_dir=output_dir,
+        split_name=split_name,
+    )
 
     function_end_time = time.time()
     function_total_time = function_end_time - function_start_time
@@ -221,6 +234,12 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         type=str,
         required=True,
         help="Path to the dataset",
+    )
+    parser.add_argument(
+        "--split_name",
+        type=str,
+        help="Dataset split to process",
+        default="train",
     )
     parser.add_argument(
         "--output_dir",
@@ -240,12 +259,6 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=32,
         help="Batch size for processing",
-    )
-    parser.add_argument(
-        "--split_name",
-        type=str,
-        help="Dataset split to process",
-        default="train",
     )
 
 
