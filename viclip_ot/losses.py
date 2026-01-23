@@ -295,8 +295,13 @@ class BatchLevelEntropicOTLoss(nn.Module):
         """
         batch_size = image_features.shape[0]
 
-        # enable gradient computation only if sim_matrix is provided
-        ctx = contextlib.nullcontext() if sim_matrix is not None else torch.no_grad()
+        # enable gradient computation only if `sim_matrix`` is provided or
+        # `self.use_transport_plan_as_logits`` is True
+        ctx = (
+            contextlib.nullcontext()
+            if (sim_matrix is not None or self.use_transport_plan_as_logits)
+            else torch.no_grad()
+        )
         with ctx:
             # compute raw cosine similarity (without scaling and bias)
             raw_cosine_sim = image_features @ text_features.T
