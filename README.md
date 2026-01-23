@@ -1,13 +1,25 @@
-# ViCLIP-OT
+# ViCLIP-OT &mdash; The First Foundation Vision-Language Model for Vietnamese Image–Text Retrieval with Optimal Transport
 
-**Abstract:** WIP
+<p>
+  <img alt="Python" src="https://img.shields.io/badge/python-3.12%20%7C%203.13-blue?logo=python">
+  <a href="https://github.com/minhnguyent546/ViCLIP-OT/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/minhnguyent546/ViCLIP-OT"></a>
+  <a href="https://github.com/minhnguyent546/ViCLIP-OT/issues"><img alt="Issues" src="https://img.shields.io/github/issues/minhnguyent546/ViCLIP-OT"></a>
+  <a href="https://github.com/minhnguyent546/ViCLIP-OT/pulls"><img alt="PRs" src="https://img.shields.io/github/issues-pr/minhnguyent546/ViCLIP-OT"></a>
+</p>
+
+<p align="center">
+  <img src="./assets/ViCLIP_OT.jpg" alt="ViCLIP-OT" width="768px">
+</p>
+
+
+> **Abstract:** WIP
 
 ---
 
 Table of Contents
 =================
 
-- [ViCLIP-OT](#viclip-ot)
+- [ViCLIP-OT — The First Foundation Vision-Language Model for Vietnamese Image–Text Retrieval with Optimal Transport](#viclip-ot--the-first-foundation-vision-language-model-for-vietnamese-imagetext-retrieval-with-optimal-transport)
 - [Table of Contents](#table-of-contents)
   - [1. Installation](#1-installation)
     - [Prerequisites](#prerequisites)
