@@ -5,6 +5,9 @@ Scripts in this directory are used to identify and remove near-duplicate images 
 These scripts are adapted from [Hugging Face's Image Deduplication Toolkit](https://github.com/huggingface/large-scale-image-deduplication), which is built around Facebook's [SSCD (Self-Supervised Copy Detection)](https://github.com/facebookresearch/sscd-copy-detection) model.
 
 ## Download pre-trained SSCD models
+
+For more models, see [facebookresearch/sscd-copy-detection](https://github.com/facebookresearch/sscd-copy-detection).
+
 ```bash
 mkdir -p models
 
