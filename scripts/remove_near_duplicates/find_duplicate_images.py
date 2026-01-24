@@ -94,7 +94,7 @@ def find_duplicates_against_precomputed(
     return sorted(duplicate_indices), duplicate_details, loading_time, similarity_time
 
 
-def deduplicate_dataset(
+def find_duplicate_images(
     dataset_dir: str,
     split_name: str,
     precomputed_dir: str,
@@ -139,7 +139,7 @@ def deduplicate_dataset(
 
     # Step 4: Save results (outside timer context to access elapsed times)
     os.makedirs(output_dir, exist_ok=True)
-    output_file = os.path.join(output_dir, f"duplicates_{split_name}.json")
+    output_file = os.path.join(output_dir, f"{split_name}_duplicates.json")
 
     new_image_ids = np.load(new_image_ids_file)
     total_images = int(len(new_image_ids))
@@ -242,13 +242,13 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Deduplicate dataset against precomputed embeddings",
+        description="Find duplicate images in a dataset against precomputed embeddings",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_opts(parser)
     args = parser.parse_args()
 
-    deduplicate_dataset(
+    find_duplicate_images(
         dataset_dir=args.dataset_dir,
         split_name=args.split_name,
         precomputed_dir=args.precomputed_dir,
