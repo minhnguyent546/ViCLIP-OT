@@ -34,12 +34,11 @@ Where `train.json`, `test.json`, and `val.json` are metadata files and have the 
     "images": [
         {"id": 1, "image_path": "images/000001.jpg"},
         {"id": 2, "image_path": "images/000002.png"},
-        ...
     ],
     "annotations": [
-        {"id": 1, "caption": "A caption for image 1", "image_id": 1},
-        {"id": 2, "caption": "A caption for image 2", "image_id": 2},
-        ...
+        {"id": 42, "caption": "A caption for image 1", "image_id": 1},
+        {"id": 43, "caption": "Another caption for image 1", "image_id": 1},
+        {"id": 67, "caption": "A caption for image 2", "image_id": 2},
     ]
 }
 ```
