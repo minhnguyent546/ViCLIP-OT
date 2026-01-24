@@ -67,7 +67,7 @@ python scripts/remove_near_duplicates/find_duplicate_images.py \
     --split_name test \
     --precomputed_dir ./data/UIT-OpenViIC-sscd-embeddings \
     --precomputed_split_name train \
-    --threshold 0.9 \
+    --threshold 0.8 \
     --output_dir ./data/KTVIC \
     --device auto \
     --batch_size 64
