@@ -46,31 +46,38 @@ Where `train.json`, `test.json`, and `val.json` are metadata files and have the 
 }
 ```
 
-## Pre-compute embeddings
+The next sections demonstrate how to use the scripts to deduplicate images for KTVIC test split against UIT-OpenViIC training split.
 
-To pre-compute image embeddings for your dataset, run the following command:
+## Pre-compute embeddings
 
 ```bash
 python scripts/remove_near_duplicates/compute_embeddings.py \
-    --dataset_dir /path/to/your/dataset \
+    --dataset_dir ./data/UIT-OpenViIC \
     --split_name train \
-    --output_dir /path/to/save/embeddings \
+    --output_dir ./data/UIT-OpenViIC-sscd-embeddings \
     --device auto \
-    --batch_size 32
+    --batch_size 64
 ```
 
 ## Find near-duplicate images
 
-To compare your dataset against pre-computed embeddings and identify near-duplicate images, run the following command:
+```bash
+python scripts/remove_near_duplicates/find_duplicate_images.py \
+    --dataset_dir ./data/KTVIC \
+    --split_name test \
+    --precomputed_dir ./data/UIT-OpenViIC-sscd-embeddings \
+    --precomputed_split_name train \
+    --threshold 0.9 \
+    --output_dir ./data/KTVIC \
+    --device auto \
+    --batch_size 64
+```
+
+## Remove near-duplicate images
 
 ```bash
 python scripts/remove_near_duplicates/dedup.py \
-    --dataset_dir /path/to/your/dataset \
-    --split_name test \
-    --precomputed_dir /path/to/precomputed/embeddings \
-    --precomputed_split_name train \
-    --threshold 0.9 \
-    --output_dir /path/to/save/duplicates \
-    --device auto \
-    --batch_size 32
+    --dataset_dir ./data/KTVIC \
+    --duplicate_result_dir ./data/KTVIC \
+    --split_name test
 ```
