@@ -12,6 +12,38 @@ mkdir -p models
 wget -O models/sscd_disc_mixup.torchscript.pt https://dl.fbaipublicfiles.com/sscd-copy-detection/sscd_disc_mixup.torchscript.pt
 ```
 
+## Dataset structure
+
+Your dataset directory should have the following structure:
+
+```
+dataset_root/
+├── images
+│    ├── 000001.jpg
+│    ├── 000002.png
+│    ├── ...
+│    └── nnnnnn.jpg
+├── train.json
+├── test.json
+└── val.json
+```
+
+Where `train.json`, `test.json`, and `val.json` are metadata files and have the format:
+```json
+{
+    "images": [
+        {"id": 1, "image_path": "images/000001.jpg"},
+        {"id": 2, "image_path": "images/000002.png"},
+        ...
+    ],
+    "annotations": [
+        {"id": 1, "caption": "A caption for image 1", "image_id": 1},
+        {"id": 2, "caption": "A caption for image 2", "image_id": 2},
+        ...
+    ]
+}
+```
+
 ## Pre-compute embeddings
 
 To pre-compute image embeddings for your dataset, run the following command:
@@ -38,5 +70,5 @@ python scripts/remove_near_duplicates/dedup.py \
     --threshold 0.9 \
     --output_dir /path/to/save/duplicates \
     --device auto \
-    --batch_size 32 \
+    --batch_size 32
 ```
