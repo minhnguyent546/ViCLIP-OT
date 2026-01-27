@@ -166,6 +166,12 @@ def train_model(args: argparse.Namespace) -> None:
             return 0.25 * (
                 sim_matrix_text + sim_matrix_image + sim_matrix_text2image + sim_matrix_image2text
             )
+        elif sim_combine_method == "cross_modality3":
+            # 1/3 * (text-text + text-image + image-text)
+            assert sim_matrix_text2image is not None and sim_matrix_image2text is not None, (
+                "sim_matrix_text2image and sim_matrix_image2text must be provided for cross_modality method."
+            )
+            return (1 / 3) * (sim_matrix_text + sim_matrix_text2image + sim_matrix_image2text)
         else:
             raise ValueError(f"Unsupported sim_combine_method: {sim_combine_method}")
 

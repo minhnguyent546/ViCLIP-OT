@@ -183,6 +183,7 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
             "power_mean",
             "arithmetic_mean",
             "cross_modality",
+            "cross_modality3",
         ],
         default="cross_modality",
     )
