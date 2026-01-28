@@ -152,7 +152,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
     image_embeddings = None
     caption_embeddings = None
     with torch.inference_mode():
-        for i in tqdm(range(0, len(ordered_samples_caption), args.batch_size)):
+        for i in tqdm(
+            range(0, len(ordered_samples_caption), args.batch_size),
+            desc="Computing caption embeddings",
+        ):
             batch_caption = ordered_samples_caption[i : i + args.batch_size]
             batch_caption_embeddings = model.process(
                 batch_caption,
@@ -166,7 +169,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                     dim=0,
                 )
 
-        for i in tqdm(range(0, len(ordered_samples_image), args.batch_size)):
+        for i in tqdm(
+            range(0, len(ordered_samples_image), args.batch_size),
+            desc="Computing image embeddings",
+        ):
             batch_image = ordered_samples_image[i : i + args.batch_size]
 
             batch_image_pil = []
@@ -194,7 +200,11 @@ def compute_embeddings(args: argparse.Namespace) -> None:
 
             # expand image embeddings according to caption counts
             batch_image_embeddings = batch_image_embeddings.repeat_interleave(
-                torch.tensor(caption_counts[i : i + len(batch_image_embeddings)]), dim=0
+                torch.tensor(
+                    caption_counts[i : i + len(batch_image_embeddings)],
+                    device=batch_image_embeddings.device,
+                ),
+                dim=0,
             )
 
             if i == 0:
