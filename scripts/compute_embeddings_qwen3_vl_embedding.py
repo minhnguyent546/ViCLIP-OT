@@ -10,9 +10,8 @@ import torch
 from loguru import logger
 from PIL import Image, ImageFile
 from pydantic import BaseModel
-from tqdm.autonotebook import tqdm
-
 from qwen3_vl_embedding import Qwen3VLEmbedder
+from tqdm.autonotebook import tqdm
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -122,10 +121,36 @@ def compute_embeddings(args: argparse.Namespace) -> None:
 
     # sorted by image_id, annotation_id
     samples.sort(key=lambda x: (x[1], x[2]))
+    image_samples: list[str] = []
+    caption_counts: list[int] = []
+    i = 0
+    while i < len(samples):
+        j = i
+        while j + 1 < len(samples) and samples[j + 1][1] == samples[i][1]:
+            j += 1
 
-    ordered_samples_image = [{"image": image_path} for image_path, _, _, _ in samples]
-    ordered_samples_caption = [{"text": caption} for _, _, _, caption in samples]
+        image_samples.append(samples[i][0])
+        caption_counts.append(j - i + 1)
+        i = j + 1
 
+    RETRIEVAL_INSTRUCTION = "Retrieve images or text relevant to the user's query."
+    ordered_samples_image = [
+        {
+            "image": image_path,
+            "instruction": RETRIEVAL_INSTRUCTION,
+        }
+        for image_path in image_samples
+    ]
+    ordered_samples_caption = [
+        {
+            "text": caption,
+            "instruction": RETRIEVAL_INSTRUCTION,
+        }
+        for _, _, _, caption in samples
+    ]
+
+    image_embeddings = None
+    caption_embeddings = None
     with torch.inference_mode():
         for i in tqdm(range(0, len(ordered_samples_caption), args.batch_size)):
             batch_caption = ordered_samples_caption[i : i + args.batch_size]
@@ -167,6 +192,11 @@ def compute_embeddings(args: argparse.Namespace) -> None:
 
             del batch_image_pil  # free up memory
 
+            # expand image embeddings according to caption counts
+            batch_image_embeddings = batch_image_embeddings.repeat_interleave(
+                torch.tensor(caption_counts[i : i + len(batch_image_embeddings)]), dim=0
+            )
+
             if i == 0:
                 image_embeddings = batch_image_embeddings
             else:
@@ -176,6 +206,11 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 )
 
             del batch_image_embeddings  # free up memory
+
+    assert caption_embeddings.shape == image_embeddings.shape, (
+        f"Caption embeddings shape {caption_embeddings.shape} does not match "
+        f"image embeddings shape {image_embeddings.shape}"
+    )
 
     caption_embeddings = caption_embeddings.cpu()  # pyright: ignore
     image_embeddings = image_embeddings.cpu()  # pyright: ignore
