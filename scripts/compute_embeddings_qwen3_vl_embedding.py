@@ -41,6 +41,12 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         default="Qwen/Qwen3-VL-Embedding-2B",
     )
     parser.add_argument(
+        "--instruction",
+        type=str,
+        help="Instruction for the model",
+        default="Retrieve images or text relevant to the user's query.",
+    )
+    parser.add_argument(
         "--dtype",
         type=str,
         help="Data type for model weights",
@@ -133,18 +139,17 @@ def compute_embeddings(args: argparse.Namespace) -> None:
         caption_counts.append(j - i + 1)
         i = j + 1
 
-    RETRIEVAL_INSTRUCTION = "Retrieve images or text relevant to the user's query."
     ordered_samples_image = [
         {
             "image": image_path,
-            "instruction": RETRIEVAL_INSTRUCTION,
+            "instruction": args.instruction,
         }
         for image_path in image_samples
     ]
     ordered_samples_caption = [
         {
             "text": caption,
-            "instruction": RETRIEVAL_INSTRUCTION,
+            "instruction": args.instruction,
         }
         for _, _, _, caption in samples
     ]
@@ -175,9 +180,9 @@ def compute_embeddings(args: argparse.Namespace) -> None:
         ):
             batch_image = ordered_samples_image[i : i + args.batch_size]
 
-            batch_image_pil = []
+            batch_image_pils = []
             for sample in batch_image:
-                image_path = sample["image"]
+                image_path = sample.pop("image")
 
                 try:
                     image = Image.open(image_path)
@@ -186,17 +191,19 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                         image = image.convert("RGBA")
 
                     image = image.convert("RGB")
-                    batch_image_pil.append({"image": image})
+
+                    batch_image_pil = {"image": image, **sample}
+                    batch_image_pils.append(batch_image_pil)
                 except Exception as e:
                     logger.error(f"Error loading image {image_path}: {e}")
                     raise e
 
             batch_image_embeddings = model.process(
-                batch_image_pil,
+                batch_image_pils,
                 normalize=args.normalize,
             )
 
-            del batch_image_pil  # free up memory
+            del batch_image_pils  # free up memory
 
             # expand image embeddings according to caption counts
             batch_image_embeddings = batch_image_embeddings.repeat_interleave(
