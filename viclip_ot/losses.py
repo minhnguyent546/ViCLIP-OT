@@ -155,6 +155,7 @@ class SigLipLoss(nn.Module):
                 num_logits=batch_size,
                 negative_only=negative_only,
             )
+            weights = None
         else:
             image_ids = image_ids.to(image_features.device)
             matches = image_ids.view(-1, 1) == image_ids.view(1, -1)
@@ -164,10 +165,16 @@ class SigLipLoss(nn.Module):
                     device=image_features.device,
                     dtype=logits.dtype,
                 )
+                weights = None
             else:
                 labels = matches.to(dtype=logits.dtype) * 2 - 1
+                num_pos = matches.sum(dim=1, keepdim=True).clamp_min(1)
+                weights = torch.ones_like(labels)
+                weights = weights.masked_fill(matches, 0.0) + matches.to(dtype=logits.dtype) / num_pos
 
         loglik = Fun.logsigmoid(labels * logits)
+        if weights is not None:
+            loglik = loglik * weights
         nll = -loglik.sum(dim=-1)
 
         loss = nll
