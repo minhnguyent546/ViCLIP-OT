@@ -135,10 +135,12 @@ class SigLipLoss(nn.Module):
         text_features: Tensor,
         logit_scale: Tensor,
         logit_bias: Tensor | None = None,
+        image_ids: Tensor | None = None,
         negative_only: bool = False,
         reduction: str = "mean",
     ) -> Tensor:
         # shape: (batch_size, batch_size)
+        batch_size = image_features.shape[0]
         logits = self.get_logits(
             image_features=image_features,
             text_features=text_features,
@@ -146,16 +148,35 @@ class SigLipLoss(nn.Module):
             logit_bias=logit_bias,
         )
         # shape: (batch_size, batch_size)
-        labels = self.get_ground_truth(
-            device=image_features.device,
-            dtype=image_features.dtype,
-            num_logits=image_features.shape[0],
-            negative_only=negative_only,
-        )
-        loss = -Fun.logsigmoid(labels * logits).sum()
+        if image_ids is None:
+            labels = self.get_ground_truth(
+                device=image_features.device,
+                dtype=logits.dtype,
+                num_logits=batch_size,
+                negative_only=negative_only,
+            )
+        else:
+            image_ids = image_ids.to(image_features.device)
+            matches = image_ids.view(-1, 1) == image_ids.view(1, -1)
+            if negative_only:
+                labels = -torch.ones(
+                    (batch_size, batch_size),
+                    device=image_features.device,
+                    dtype=logits.dtype,
+                )
+            else:
+                labels = matches.to(dtype=logits.dtype) * 2 - 1
 
-        if reduction == "mean":
-            loss = loss / image_features.shape[0]
+        loglik = Fun.logsigmoid(labels * logits)
+        nll = -loglik.sum(dim=-1)
+
+        loss = nll
+        if reduction == "sum":
+            loss = nll.sum()
+        elif reduction == "mean":
+            loss = nll.mean()
+        elif reduction == "none":
+            pass
 
         return loss
 
@@ -165,6 +186,7 @@ class SigLipLoss(nn.Module):
         text_features: Tensor,
         logit_scale: Tensor,
         logit_bias: Tensor | None = None,
+        image_ids: Tensor | None = None,
         output_dict: bool = False,
         reduction: str = "mean",
         **kwargs,
@@ -174,6 +196,7 @@ class SigLipLoss(nn.Module):
             text_features=text_features,
             logit_scale=logit_scale,
             logit_bias=logit_bias,
+            image_ids=image_ids,
             reduction=reduction,
         )
 
