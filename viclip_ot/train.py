@@ -75,6 +75,7 @@ def train_model(args: argparse.Namespace) -> None:
     if args.sim_graph_regularized_ot and args.criterion in (
         "batch_level_entropic_ot_loss",
         "hybrid_clip_tp_loss",
+        "hybrid_sig_lip_tp_loss",
     ):
         if (
             args.precomputed_caption_embeddings_path is None
@@ -187,6 +188,12 @@ def train_model(args: argparse.Namespace) -> None:
     elif args.criterion == "hybrid_clip_tp_loss":
         criterion = losses.HybridClipTPLoss(
             clip_loss_lambda=args.hybrid_clip_tp_loss_clip_loss_lambda,
+            sinkhorn_solver=args.sinkhorn_solver,
+            use_transport_plan_as_logits=args.use_transport_plan_as_logits,
+        )
+    elif args.criterion == "hybrid_sig_lip_tp_loss":
+        criterion = losses.HybridSigLipTPLoss(
+            sig_lip_loss_lambda=args.hybrid_sig_lip_tp_loss_sig_lip_loss_lambda,
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
         )
@@ -629,7 +636,12 @@ def train_model(args: argparse.Namespace) -> None:
 
                 if (
                     isinstance(
-                        criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                        criterion,
+                        (
+                            losses.BatchLevelEntropicOTLoss,
+                            losses.HybridClipTPLoss,
+                            losses.HybridSigLipTPLoss,
+                        ),
                     )
                     and caption_embeddings is not None
                     and image_embeddings is not None
@@ -694,7 +706,12 @@ def train_model(args: argparse.Namespace) -> None:
 
                 if (
                     isinstance(
-                        criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                        criterion,
+                        (
+                            losses.BatchLevelEntropicOTLoss,
+                            losses.HybridClipTPLoss,
+                            losses.HybridSigLipTPLoss,
+                        ),
                     )
                     and caption_embeddings is not None
                     and image_embeddings is not None

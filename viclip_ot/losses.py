@@ -170,7 +170,9 @@ class SigLipLoss(nn.Module):
                 labels = matches.to(dtype=logits.dtype) * 2 - 1
                 num_pos = matches.sum(dim=1, keepdim=True).clamp_min(1)
                 weights = torch.ones_like(labels)
-                weights = weights.masked_fill(matches, 0.0) + matches.to(dtype=logits.dtype) / num_pos
+                weights = (
+                    weights.masked_fill(matches, 0.0) + matches.to(dtype=logits.dtype) / num_pos
+                )
 
         loglik = Fun.logsigmoid(labels * logits)
         if weights is not None:
@@ -488,5 +490,71 @@ class HybridClipTPLoss(nn.Module):
             reduction=reduction,
         )
         total_loss = self.clip_loss_lambda * clip_loss_value + ot_loss_value
+
+        return {"loss": total_loss} if output_dict else total_loss
+
+
+class HybridSigLipTPLoss(nn.Module):
+    """
+    Combines SigLIP loss with Batch-level Entropic Optimal Transport Loss.
+    """
+
+    def __init__(
+        self,
+        sig_lip_loss_lambda: float = 0.1,
+        sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
+        use_transport_plan_as_logits: bool = False,
+    ):
+        """
+        In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,
+        the transport plan will be used as logits for computing the cross-entropy loss,
+        otherwise, use transport plan as soft labels.
+
+        If `sim_matrix` is provided in the forward pass, `use_transport_plan_as_logits` takes no effect.
+        """
+
+        super().__init__()
+
+        self.sig_lip_loss_lambda = sig_lip_loss_lambda
+        self.use_transport_plan_as_logits = use_transport_plan_as_logits
+
+        self.sig_lip_loss = SigLipLoss()
+        self.ot_loss = BatchLevelEntropicOTLoss(
+            sinkhorn_solver=sinkhorn_solver,
+            use_transport_plan_as_logits=self.use_transport_plan_as_logits,
+        )
+
+    def forward(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+        image_ids: Tensor | None = None,
+        sim_matrix: Tensor | None = None,
+        output_dict: bool = False,
+        reduction: str = "mean",
+    ):
+        sig_lip_loss_value = self.sig_lip_loss(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            logit_bias=logit_bias,
+            image_ids=image_ids,
+            output_dict=False,
+            reduction=reduction,
+        )
+
+        ot_loss_value = self.ot_loss(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            logit_bias=logit_bias,
+            output_dict=False,
+            sim_matrix=sim_matrix,
+            image_ids=image_ids,
+            reduction=reduction,
+        )
+        total_loss = self.sig_lip_loss_lambda * sig_lip_loss_value + ot_loss_value
 
         return {"loss": total_loss} if output_dict else total_loss
