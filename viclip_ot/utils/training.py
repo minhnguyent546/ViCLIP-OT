@@ -34,6 +34,9 @@ class EvalResults(TypedDict):
     t2i_R__5: float
     t2i_R__10: float
 
+    alignment_score: float
+    modality_gap: float
+
 
 def get_parameter_names(model, forbidden_layer_types=None, forbidden_layer_names=None):
     """
@@ -87,6 +90,8 @@ def convert_eval_results_to_dict(eval_results: EvalResults, fmt: str = "0.4f") -
         "t2i_R__1": f"{eval_results['t2i_R__1']:{fmt}}",
         "t2i_R__5": f"{eval_results['t2i_R__5']:{fmt}}",
         "t2i_R__10": f"{eval_results['t2i_R__10']:{fmt}}",
+        "alignment_score": f"{eval_results['alignment_score']:{fmt}}",
+        "modality_gap": f"{eval_results['modality_gap']:{fmt}}",
     }
     return eval_results_dict
 
@@ -264,6 +269,11 @@ def eval_model(
         )
         eval_metrics["loss"] = eval_loss.avg
 
+        alignment_metrics = compute_alignment_score(
+            image_embeddings=torch.cat(all_image_features, dim=0).numpy(),
+            text_embeddings=torch.cat(all_text_features, dim=0).numpy(),
+        )
+        eval_metrics.update(alignment_metrics)
     # set model back to the original mode
     model.train(model_mode_before)
 
@@ -486,6 +496,8 @@ def maybe_log_eval_results(
         f"{prefix}/t2i_R__1": eval_results["t2i_R__1"],
         f"{prefix}/t2i_R__5": eval_results["t2i_R__5"],
         f"{prefix}/t2i_R__10": eval_results["t2i_R__10"],
+        f"{prefix}/alignment_score": eval_results["alignment_score"],
+        f"{prefix}/modality_gap": eval_results["modality_gap"],
         "epoch": epoch + 1,
     }
 
@@ -516,7 +528,9 @@ def print_eval_results(
         f"{prefix}_t2i_median_rank {eval_results['t2i_median_rank']:0.4f} | "
         f"{prefix}_t2i_R@1 {eval_results['t2i_R__1']:0.4f} | "
         f"{prefix}_t2i_R@5 {eval_results['t2i_R__5']:0.4f} | "
-        f"{prefix}_t2i_R@10 {eval_results['t2i_R__10']:0.4f}"
+        f"{prefix}_t2i_R@10 {eval_results['t2i_R__10']:0.4f} | "
+        f"{prefix}_alignment_score {eval_results['alignment_score']:0.4f} | "
+        f"{prefix}_modality_gap {eval_results['modality_gap']:0.4f}"
     )
     print(print_str)
     if logger is not None:
@@ -531,6 +545,26 @@ def accuracy(output, target, topk=(1,)) -> list[float]:
     pred = pred.t()
     correct = pred.eq(target.reshape(1, -1).expand_as(pred))
     return [correct[: min(k, maxk)].reshape(-1).float().sum().item() / batch_size for k in topk]
+
+
+def compute_alignment_score(
+    image_embeddings: np.ndarray, text_embeddings: np.ndarray
+) -> dict[str, Any]:
+    assert image_embeddings.shape == text_embeddings.shape, "Shapes must match"
+
+    # alignment score = average cosine similarity of matched image-text pairs
+    alignment_score = np.sum(image_embeddings * text_embeddings) / image_embeddings.shape[0]
+
+    # modality gap = difference between centroids of image and text embeddings
+    image_centroid = np.mean(image_embeddings, axis=0)
+    text_centroid = np.mean(text_embeddings, axis=0)
+
+    modality_gap = np.linalg.norm(text_centroid - image_centroid)
+
+    return {
+        "alignment_score": alignment_score,
+        "modality_gap": modality_gap,
+    }
 
 
 def get_submodule_from_module_name(
