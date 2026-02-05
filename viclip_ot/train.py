@@ -381,12 +381,12 @@ def train_model(args: argparse.Namespace) -> None:
         f"num_params: {utils.to_human_readable(num_model_params)} | num_trainable_params: {utils.to_human_readable(num_model_trainable_params)}"
     )
 
-    def _run_test_only() -> None:
+    def _run_test_only(data_loader: DataLoader) -> None:  # pyright: ignore[reportMissingTypeArgument]
         test_start_time = time.perf_counter()
         test_results = eval_model(
             model=model,
             criterion=criterion,
-            eval_data_loader=test_data_loader,
+            eval_data_loader=data_loader,
             device=device,
         )
         test_elapsed_time = time.perf_counter() - test_start_time
@@ -405,11 +405,13 @@ def train_model(args: argparse.Namespace) -> None:
             f"      i2t_R__10: {test_results['i2t_R__10']:0.6f}\n"
             f"      i2t_mean_rank: {test_results['i2t_mean_rank']:0.6f}\n"
             f"      i2t_median_rank: {test_results['i2t_median_rank']:0.6f}\n"
+            f"    Alignment_score: {test_results['alignment_score']:0.6f}\n"
+            f"    Modality_gap: {test_results['modality_gap']:0.6f}\n"
             f"    Elapsed time: {utils.to_hms(test_elapsed_time)}\n"
         )
 
     if args.run_test_only:
-        return _run_test_only()
+        return _run_test_only(test_data_loader)
 
     assert checkpoint_dir is not None
 
@@ -956,7 +958,7 @@ def train_model(args: argparse.Namespace) -> None:
         checkpoint = torch.load(best_checkpoint_path, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"], strict=True)
 
-        _run_test_only()
+        _run_test_only(test_data_loader)
 
 
 def main():
