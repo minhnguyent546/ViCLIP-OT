@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# `qwen3_vl_embedding` script can be downloaded from: https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B/blob/2a50926d213628c727f38025982a76f655673f54/scripts/qwen3_vl_embedding.py
-
 import argparse
 import json
 import os
@@ -12,7 +10,7 @@ import torch
 from loguru import logger
 from PIL import Image, ImageFile
 from pydantic import BaseModel
-from qwen3_vl_embedding import Qwen3VLEmbedder
+from sentence_transformers import SentenceTransformer
 from tqdm.autonotebook import tqdm
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -38,15 +36,9 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--model",
         type=str,
-        choices=["Qwen/Qwen3-VL-Embedding-2B", "Qwen/Qwen3-VL-Embedding-8B"],
-        help="Pretrained Qwen3-L model to use",
-        default="Qwen/Qwen3-VL-Embedding-2B",
-    )
-    parser.add_argument(
-        "--instruction",
-        type=str,
-        help="Instruction for the model",
-        default="Retrieve images or text relevant to the user's query.",
+        choices=["jinaai/jina-embeddings-v4"],
+        help="Jina embeddings model to use",
+        default="jinaai/jina-embeddings-v4",
     )
     parser.add_argument(
         "--dtype",
@@ -81,12 +73,23 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
 
 
 def compute_embeddings(args: argparse.Namespace) -> None:
-    model = Qwen3VLEmbedder(
+    model = SentenceTransformer(
         args.model,
-        dtype=args.dtype,
-        attn_implementation="flash_attention_2",
-        max_pixels=345600,  # 480x720
+        trust_remote_code=True,
+        model_kwargs={
+            "attn_implementation": "flash_attention_2",
+            "dtype": args.dtype,  # make sure the model support this dtype!
+        },
     )
+
+    if hasattr(model, "_first_module"):
+        model_first_module = model._first_module()  # pyright: ignore[reportPrivateUsage]
+        if hasattr(model_first_module, "processor"):
+            processor = model_first_module.processor
+            logger.info(f"Processor: {processor}")
+            # Set max image pixels (e.g., 512*512 = 262144)
+            processor.max_pixels = 345600  # 480 * 720
+            logger.info(f"Set processor.max_pixels to {processor.max_pixels}")
 
     dataset_dir = args.dataset_dir
     metadata_json_file = args.metadata_json_file
@@ -141,20 +144,7 @@ def compute_embeddings(args: argparse.Namespace) -> None:
         caption_counts.append(j - i + 1)
         i = j + 1
 
-    ordered_samples_image = [
-        {
-            "image": image_path,
-            "instruction": args.instruction,
-        }
-        for image_path in image_samples
-    ]
-    ordered_samples_caption = [
-        {
-            "text": caption,
-            "instruction": args.instruction,
-        }
-        for _, _, _, caption in samples
-    ]
+    ordered_samples_caption = [caption for _, _, _, caption in samples]
 
     image_embeddings = None
     caption_embeddings = None
@@ -164,9 +154,11 @@ def compute_embeddings(args: argparse.Namespace) -> None:
             desc="Computing caption embeddings",
         ):
             batch_caption = ordered_samples_caption[i : i + args.batch_size]
-            batch_caption_embeddings = model.process(
-                batch_caption,
-                normalize=args.normalize,
+            batch_caption_embeddings = model.encode(
+                sentences=batch_caption,
+                normalize_embeddings=args.normalize,
+                task="retrieval",
+                convert_to_tensor=True,
             )
             if i == 0:
                 caption_embeddings = batch_caption_embeddings
@@ -177,15 +169,13 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 )
 
         for i in tqdm(
-            range(0, len(ordered_samples_image), args.batch_size),
+            range(0, len(image_samples), args.batch_size),
             desc="Computing image embeddings",
         ):
-            batch_image = ordered_samples_image[i : i + args.batch_size]
+            batch_image = image_samples[i : i + args.batch_size]
 
             batch_image_pils = []
-            for sample in batch_image:
-                image_path = sample.pop("image")
-
+            for image_path in batch_image:
                 try:
                     image = Image.open(image_path)
                     # handle palette images with transparency
@@ -194,15 +184,16 @@ def compute_embeddings(args: argparse.Namespace) -> None:
 
                     image = image.convert("RGB")
 
-                    batch_image_pil = {"image": image, **sample}
-                    batch_image_pils.append(batch_image_pil)
+                    batch_image_pils.append(image)
                 except Exception as e:
                     logger.error(f"Error loading image {image_path}: {e}")
                     raise e
 
-            batch_image_embeddings = model.process(
+            batch_image_embeddings = model.encode(
                 batch_image_pils,
-                normalize=args.normalize,
+                normalize_embeddings=args.normalize,
+                task="retrieval",
+                convert_to_tensor=True,
             )
 
             del batch_image_pils  # free up memory
