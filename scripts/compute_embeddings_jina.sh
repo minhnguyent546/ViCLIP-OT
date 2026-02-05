@@ -6,4 +6,5 @@ python scripts/compute_embeddings_jina_embedding_v4.py \
     --dataset_dir ./data/UIT-OpenViIC \
     --metadata_json_file test.json \
     --batch_size 32 \
-    --normalize
+    --normalize \
+    --use_flash_attn
