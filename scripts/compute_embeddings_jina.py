@@ -36,7 +36,7 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--model",
         type=str,
-        choices=["jinaai/jina-embeddings-v4"],
+        choices=["jinaai/jina-embeddings-v4", "jinaai/jina-clip-v2"],
         help="Jina embeddings model to use",
         default="jinaai/jina-embeddings-v4",
     )
@@ -70,16 +70,23 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Whether to normalize the embeddings",
     )
+    parser.add_argument(
+        "--use_flash_attn",
+        action="store_true",
+        help="Whether to use flash attention if supported by the model",
+    )
 
 
 def compute_embeddings(args: argparse.Namespace) -> None:
+    model_kwargs = {
+        "dtype": args.dtype,  # make sure the model support this dtype!
+    }
+    if args.use_flash_attn:
+        model_kwargs["attn_implementation"] = "flash_attention_2"
     model = SentenceTransformer(
         args.model,
         trust_remote_code=True,
-        model_kwargs={
-            "attn_implementation": "flash_attention_2",
-            "dtype": args.dtype,  # make sure the model support this dtype!
-        },
+        model_kwargs=model_kwargs,
     )
 
     if hasattr(model, "_first_module"):
