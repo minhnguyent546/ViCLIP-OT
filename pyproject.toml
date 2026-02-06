@@ -48,6 +48,7 @@ dev = [
     "ipykernel>=7.1.0",
     "peft>=0.18.1",
     "qwen-vl-utils>=0.0.14",
+    "sentencepiece>=0.2.1",
 ]
 
 [tool.ruff]
