@@ -10,8 +10,8 @@ import torch
 from loguru import logger
 from PIL import Image, ImageFile
 from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer
 from tqdm.autonotebook import tqdm
+from transformers import AutoModel, AutoProcessor
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -32,73 +32,23 @@ class ImageTextData(BaseModel):
     annotations: list[ImageTextDataAnnotation]
 
 
-def add_opts(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--model",
-        type=str,
-        choices=["jinaai/jina-embeddings-v4", "jinaai/jina-clip-v2"],
-        help="Jina embeddings model to use",
-        default="jinaai/jina-embeddings-v4",
-    )
-    parser.add_argument(
-        "--dtype",
-        type=str,
-        help="Data type for model weights",
-        choices=["float32", "float16", "bfloat16"],
-        default="bfloat16",
-    )
-    parser.add_argument(
-        "--dataset_dir",
-        type=str,
-        help="Directory containing the dataset",
-        default="./data/UIT-OpenViIC",
-    )
-    parser.add_argument(
-        "--metadata_json_file",
-        type=str,
-        help="Metadata JSON file containing the dataset annotations",
-        default="train.json",
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        help="Batch size for processing captions",
-        default=32,
-    )
-    parser.add_argument(
-        "--normalize",
-        action="store_true",
-        help="Whether to normalize the embeddings",
-    )
-    parser.add_argument(
-        "--use_flash_attn",
-        action="store_true",
-        help="Whether to use flash attention if supported by the model",
-    )
-
-
 def compute_embeddings(args: argparse.Namespace) -> None:
-    model_kwargs = {
-        "dtype": args.dtype,  # make sure the model support this dtype!
-    }
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model_kwargs = {}
     if args.use_flash_attn and args.dtype != "float32":
         model_kwargs["attn_implementation"] = "flash_attention_2"
-    model = SentenceTransformer(
+
+    model = AutoModel.from_pretrained(
         args.model,
         trust_remote_code=True,
-        model_kwargs=model_kwargs,
-    )
+        dtype=args.dtype,
+        **model_kwargs,
+    ).to(device)
+
     num_params = sum(p.numel() for p in model.parameters())
     logger.info(f"Loaded model {args.model} with {num_params:,} parameters.")
-
-    if hasattr(model, "_first_module"):
-        model_first_module = model._first_module()  # pyright: ignore[reportPrivateUsage]
-        if hasattr(model_first_module, "processor"):
-            processor = model_first_module.processor
-            logger.info(f"Processor: {processor}")
-            # Set max image pixels (e.g., 512*512 = 262144)
-            processor.max_pixels = 345600  # 480 * 720
-            logger.info(f"Set processor.max_pixels to {processor.max_pixels}")
+    processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=True)
 
     dataset_dir = args.dataset_dir
     metadata_json_file = args.metadata_json_file
@@ -163,12 +113,18 @@ def compute_embeddings(args: argparse.Namespace) -> None:
             desc="Computing caption embeddings",
         ):
             batch_caption = ordered_samples_caption[i : i + args.batch_size]
-            batch_caption_embeddings = model.encode(
-                sentences=batch_caption,
-                normalize_embeddings=args.normalize,
-                task="retrieval",
-                convert_to_tensor=True,
+            batch_caption_inputs = processor(
+                text=batch_caption,
+                return_tensors="pt",
+                truncation=True,
+                max_length=64,  # siglip max length
+                padding=True,
+            ).to(device)
+
+            batch_caption_embeddings = model.get_text_features(
+                **batch_caption_inputs,
             )
+
             if i == 0:
                 caption_embeddings = batch_caption_embeddings
             else:
@@ -198,12 +154,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                     logger.error(f"Error loading image {image_path}: {e}")
                     raise e
 
-            batch_image_embeddings = model.encode(
-                batch_image_pils,
-                normalize_embeddings=args.normalize,
-                task="retrieval",
-                convert_to_tensor=True,
-            )
+            batch_image_inputs = processor(
+                images=batch_image_pils, return_tensors="pt", padding=True
+            ).to(device)
+            batch_image_embeddings = model.get_image_features(**batch_image_inputs)
 
             del batch_image_pils  # free up memory
 
@@ -251,9 +205,49 @@ def set_seed(seed: int = 42) -> None:
     torch.backends.cudnn.benchmark = False
 
 
+def add_opts(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--model",
+        type=str,
+        choices=["google/siglip-base-patch16-256-multilingual"],
+        help="SigLIP model to use",
+        default="google/siglip-base-patch16-256-multilingual",
+    )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        help="Data type for model weights",
+        choices=["float32", "float16", "bfloat16"],
+        default="float32",
+    )
+    parser.add_argument(
+        "--dataset_dir",
+        type=str,
+        help="Directory containing the dataset",
+        default="./data/UIT-OpenViIC",
+    )
+    parser.add_argument(
+        "--metadata_json_file",
+        type=str,
+        help="Metadata JSON file containing the dataset annotations",
+        default="train.json",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        help="Batch size for processing captions",
+        default=32,
+    )
+    parser.add_argument(
+        "--use_flash_attn",
+        action="store_true",
+        help="Whether to use flash attention if supported by the model",
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Pre-compute caption embeddings using a sentence-transformer model",
+        description="Pre-compute caption embeddings using SigLIP model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_opts(parser)

@@ -81,11 +81,14 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
 
 
 def compute_embeddings(args: argparse.Namespace) -> None:
+    model_kwargs = {}
+    if args.use_flash_attn and args.dtype != "float32":
+        model_kwargs["attn_implementation"] = "flash_attention_2"
     model = Qwen3VLEmbedder(
         args.model,
         dtype=args.dtype,
-        attn_implementation="flash_attention_2",
         max_pixels=345600,  # 480x720
+        **model_kwargs,
     )
 
     dataset_dir = args.dataset_dir
