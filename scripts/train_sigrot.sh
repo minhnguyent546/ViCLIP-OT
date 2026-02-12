@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 
+export WANDB_API_KEY='<YOUR_WANDB_API_KEY_HERE>'
+
 uv run python -m viclip_ot.train \
+  --optimizer adamw \
+  --adam_eps 1e-10 \
   --seed 42 \
-  --model_config ./config/model.convnext_small_dinov3.yaml \
+  --model_config ./config/model.vit_base_dinov3_sbert.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
   --train_batch_size 16 \
   --eval_batch_size 32 \
@@ -18,7 +22,7 @@ uv run python -m viclip_ot.train \
   --lr 2e-4 \
   --backbone_lr 5e-5 \
   --lock_image \
-  --lock_image_last_unfreeze_groups 2 \
+  --lock_image_last_unfreeze_groups 14 \
   --weight_decay 1e-4 \
   --scheduler one_cycle_lr \
   --min_lr 1e-6 \
@@ -28,5 +32,11 @@ uv run python -m viclip_ot.train \
   --save_best_k 5 \
   --max_grad_norm 1.0 \
   --wandb_logging \
-  --wandb_project viclip_ot_test \
-  --wandb_name cliploss_dinov3_small_gemma300m_openviic_final_30
+  --wandb_project viclip_ot \
+  --wandb_name sigrot \
+  --precomputed_image_embeddings_path ./data/UIT-OpenViIC-embeddings/train_image_embeddings_qwen3_vl_embedding_2b.pt  \
+  --precomputed_caption_embeddings_path ./data/UIT-OpenViIC-embeddings/train_caption_embeddings_qwen3_vl_embedding_2b.pt \
+  --sim_graph_regularized_ot \
+  --sinkhorn_solver sinkhorn_unbalanced \
+  --criterion batch_level_entropic_ot_loss \
+  --sim_combine_method cross_modality
