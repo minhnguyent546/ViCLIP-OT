@@ -1,8 +1,8 @@
 # ViCLIP-OT &mdash; The First Foundation Vision-Language Model for Vietnamese Image–Text Retrieval with Optimal Transport
 
 <p>
-  <img alt="Torch" src="https://img.shields.io/badge/PyTorch-2.8.0-EE4C2C.svg?style=flat&logo=pytorch">
-  <img alt="Python" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB.svg?style=flat&logo=python&logoColor=white">
+  <a href="https://pytorch.org"><img alt="Torch" src="https://img.shields.io/badge/PyTorch-2.8.0-EE4C2C.svg?style=flat&logo=pytorch"></a>
+  <a href="https://www.python.org"><img alt="Python" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB.svg?style=flat&logo=python&logoColor=white"></a>
 </p>
 
 ---
