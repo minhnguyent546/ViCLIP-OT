@@ -1,8 +1,9 @@
 # ViCLIP-OT &mdash; The First Foundation Vision-Language Model for Vietnamese Image–Text Retrieval with Optimal Transport
 
 <p>
+  <a href="https://arxiv.org/abs/1234.56789"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat"></a>
+  <a href="https://www.python.org"><img alt="Python" src="https://img.shields.io/badge/python-3.12%20%7C%203.13-3776AB.svg?style=flat&logo=python&logoColor=white"></a>
   <a href="https://pytorch.org"><img alt="Torch" src="https://img.shields.io/badge/PyTorch-2.8.0-EE4C2C.svg?style=flat&logo=pytorch"></a>
-  <a href="https://www.python.org"><img alt="Python" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB.svg?style=flat&logo=python&logoColor=white"></a>
   <a href="https://github.com/minhnguyent546/ViCLIP-OT/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/minhnguyent546/ViCLIP-OT"></a>
 </p>
 
@@ -418,7 +419,7 @@ The following image shows UMAP visualization of image and text embeddings on the
 For all datasets, we use the original splits provided by the dataset authors and did not perform any additional splits. Links to the original data are provided below:
 
 | Dataset | Link to the original data |
-| :---: | :---: |
+| --- | --- |
 | UIT-OpenViIC | [Google Drive](https://drive.google.com/drive/folders/1pTzFsnPt-QSEdED_0InKxgjZVjRWfmEW?usp=drive_link) |
 | KTVIC | [Github](https://github.com/pacman-ctm/ktvic) |
 | Crossmodal-3600 | [Dataset homepage](https://google.github.io/crossmodal-3600/) |
