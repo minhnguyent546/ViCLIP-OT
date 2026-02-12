@@ -464,7 +464,7 @@ python scripts/compute_embeddings_qwen3_vl_embedding.py \
   --instruction "Retrieve images or text relevant to the user's query" \
   --dtype bfloat16 \
   --dataset_dir ./data/UIT-OpenViIC \
-  --metadata_json_file test.json \
+  --metadata_json_file train.json \
   --batch_size 32 \
   --normalize
  ```
