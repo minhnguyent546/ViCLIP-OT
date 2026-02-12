@@ -42,13 +42,13 @@ Table of Contents
 
 ## 1. Pretrained models
 
-| Model | Checkpoint link | Training log |
-| :---: | :---: | :---: |
-| ViCLIP-OT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/viclip_ot/viclip_ot.pth) | [Link](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/viclip_ot/training.log) |
-| ViSigLIP-OT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/visiglip_ot/visiglip_ot.pth) | [Link](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/visiglip_ot/training.log) |
-| CLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/clip/clip.pth) | [Link](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/clip/training.log) |
-| SigLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/siglip/siglip.pth) | [Link](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/siglip/training.log) |
-| SIGROT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/sigrot/sigrot.pth) | [Link](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/sigrot/training.log) |
+| Model | Checkpoint link | Config | Training log |
+| :---: | :---: | :---: | :---: |
+| ViCLIP-OT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/viclip_ot/viclip_ot.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) |  [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/viclip_ot/training.log) |
+| ViSigLIP-OT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/visiglip_ot/visiglip_ot.pth) | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/visiglip_ot/training.log) |
+| CLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/clip/clip.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/clip/training.log) |
+| SigLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/siglip/siglip.pth) | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/siglip/training.log) |
+| SIGROT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/sigrot/sigrot.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/sigrot/training.log) |
 
 ## 2. Quantitative Results
 
@@ -417,54 +417,35 @@ WIP
 
 To train the model, you can run the following command:
 ```bash
-uv run python -m viclip_ot.train \
-  --seed 42 \
-  --model_config ./config/model.vit_base_dinov3.yaml \
-  --dataset_dir ./data/UIT-OpenViIC \
-  --train_batch_size 16 \
-  --eval_batch_size 32 \
-  --train_crop_size 224 \
-  --eval_resize_size 256 \
-  --eval_crop_size 224 \
-  --checkpoints_dir ./checkpoints \
-  --num_epochs 30 \
-  --num_workers 8 \
-  --log_file_interval 3 \
-  --mixed_precision bf16 \
-  --gradient_accum_steps 8 \
-  --lr 2e-4 \
-  --backbone_lr 5e-5 \
-  --lock_image \
-  --lock_image_last_unfreeze_groups 2 \
-  --weight_decay 1e-4 \
-  --scheduler one_cycle_lr \
-  --min_lr 1e-6 \
-  --lr_warmup_epochs 2 \
-  --lr_warmup_method linear \
-  --best_checkpoint_metrics t2i_R__1 i2t_R__1 \
-  --save_best_k 5 \
-  --max_grad_norm 1.0 \
-  --wandb_logging \
-  --wandb_project viclip_ot_test \
-  --wandb_name cliploss_vit_base_dinov3_gemma300m_openviic_final_30
+bash scripts/train_viclip_ot.sh
+
+# Refer to scripts/ for other training scripts:
+# bash scripts/train_visiglip_ot.sh
+# bash scripts/train_clip.sh
+# bash scripts/train_siglip.sh
+# bash scripts/train_sigrot.sh
 ```
 
 ### 4.4 Inference
 
-To run inference on a trained model, you can use the following command:
+You can run inference using a pretrained checkpoint as follows:
+```bash
+uv run hf download minhnguyent546/ViCLIP-OT \
+    --local-dir checkpoints \
+    --include visiglip_ot/visiglip_ot.pth
+```
+
 ```bash
 uv run python -m viclip_ot.train \
   --run_test_only \
-  --from_checkpoint <PATH_TO_YOUR_CHECKPOINT> \
+  --from_checkpoint ./checkpoints/visiglip_ot/visiglip_ot.pth \
   --seed 42 \
-  --model_config ./config/model.vit_base_dinov3.yaml \
+  --model_config ./config/model.vit_base_dinov3_sbert_siglip.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
-  --train_batch_size 16 \
   --eval_batch_size 32 \
-  --train_crop_size 224 \
   --eval_resize_size 256 \
   --eval_crop_size 224 \
-  --num_workers 4 \
+  --num_workers 4
 ```
 
 ## 5. Citing
