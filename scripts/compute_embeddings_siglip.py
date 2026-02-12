@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# `qwen3_vl_embedding` script can be downloaded from: https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B/blob/2a50926d213628c727f38025982a76f655673f54/scripts/qwen3_vl_embedding.py
-
 import argparse
 import json
 import os
@@ -12,8 +10,8 @@ import torch
 from loguru import logger
 from PIL import Image, ImageFile
 from pydantic import BaseModel
-from qwen3_vl_embedding import Qwen3VLEmbedder
 from tqdm.autonotebook import tqdm
+from transformers import AutoModel, AutoProcessor
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -34,62 +32,23 @@ class ImageTextData(BaseModel):
     annotations: list[ImageTextDataAnnotation]
 
 
-def add_opts(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--model",
-        type=str,
-        choices=["Qwen/Qwen3-VL-Embedding-2B", "Qwen/Qwen3-VL-Embedding-8B"],
-        help="Pretrained Qwen3-L model to use",
-        default="Qwen/Qwen3-VL-Embedding-2B",
-    )
-    parser.add_argument(
-        "--instruction",
-        type=str,
-        help="Instruction for the model",
-        default="Retrieve images or text relevant to the user's query.",
-    )
-    parser.add_argument(
-        "--dtype",
-        type=str,
-        help="Data type for model weights",
-        choices=["float32", "float16", "bfloat16"],
-        default="bfloat16",
-    )
-    parser.add_argument(
-        "--dataset_dir",
-        type=str,
-        help="Directory containing the dataset",
-        default="./data/UIT-OpenViIC",
-    )
-    parser.add_argument(
-        "--metadata_json_file",
-        type=str,
-        help="Metadata JSON file containing the dataset annotations",
-        default="train.json",
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        help="Batch size for processing captions",
-        default=32,
-    )
-    parser.add_argument(
-        "--normalize",
-        action="store_true",
-        help="Whether to normalize the embeddings",
-    )
-
-
 def compute_embeddings(args: argparse.Namespace) -> None:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     model_kwargs = {}
     if args.use_flash_attn and args.dtype != "float32":
         model_kwargs["attn_implementation"] = "flash_attention_2"
-    model = Qwen3VLEmbedder(
+
+    model = AutoModel.from_pretrained(
         args.model,
+        trust_remote_code=True,
         dtype=args.dtype,
-        max_pixels=345600,  # 480x720
         **model_kwargs,
-    )
+    ).to(device)
+
+    num_params = sum(p.numel() for p in model.parameters())
+    logger.info(f"Loaded model {args.model} with {num_params:,} parameters.")
+    processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=True)
 
     dataset_dir = args.dataset_dir
     metadata_json_file = args.metadata_json_file
@@ -144,20 +103,7 @@ def compute_embeddings(args: argparse.Namespace) -> None:
         caption_counts.append(j - i + 1)
         i = j + 1
 
-    ordered_samples_image = [
-        {
-            "image": image_path,
-            "instruction": args.instruction,
-        }
-        for image_path in image_samples
-    ]
-    ordered_samples_caption = [
-        {
-            "text": caption,
-            "instruction": args.instruction,
-        }
-        for _, _, _, caption in samples
-    ]
+    ordered_samples_caption = [caption for _, _, _, caption in samples]
 
     image_embeddings = None
     caption_embeddings = None
@@ -167,10 +113,18 @@ def compute_embeddings(args: argparse.Namespace) -> None:
             desc="Computing caption embeddings",
         ):
             batch_caption = ordered_samples_caption[i : i + args.batch_size]
-            batch_caption_embeddings = model.process(
-                batch_caption,
-                normalize=args.normalize,
+            batch_caption_inputs = processor(
+                text=batch_caption,
+                return_tensors="pt",
+                truncation=True,
+                max_length=64,  # siglip max length
+                padding=True,
+            ).to(device)
+
+            batch_caption_embeddings = model.get_text_features(
+                **batch_caption_inputs,
             )
+
             if i == 0:
                 caption_embeddings = batch_caption_embeddings
             else:
@@ -180,15 +134,13 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 )
 
         for i in tqdm(
-            range(0, len(ordered_samples_image), args.batch_size),
+            range(0, len(image_samples), args.batch_size),
             desc="Computing image embeddings",
         ):
-            batch_image = ordered_samples_image[i : i + args.batch_size]
+            batch_image = image_samples[i : i + args.batch_size]
 
             batch_image_pils = []
-            for sample in batch_image:
-                image_path = sample.pop("image")
-
+            for image_path in batch_image:
                 try:
                     image = Image.open(image_path)
                     # handle palette images with transparency
@@ -197,16 +149,15 @@ def compute_embeddings(args: argparse.Namespace) -> None:
 
                     image = image.convert("RGB")
 
-                    batch_image_pil = {"image": image, **sample}
-                    batch_image_pils.append(batch_image_pil)
+                    batch_image_pils.append(image)
                 except Exception as e:
                     logger.error(f"Error loading image {image_path}: {e}")
                     raise e
 
-            batch_image_embeddings = model.process(
-                batch_image_pils,
-                normalize=args.normalize,
-            )
+            batch_image_inputs = processor(
+                images=batch_image_pils, return_tensors="pt", padding=True
+            ).to(device)
+            batch_image_embeddings = model.get_image_features(**batch_image_inputs)
 
             del batch_image_pils  # free up memory
 
@@ -254,9 +205,49 @@ def set_seed(seed: int = 42) -> None:
     torch.backends.cudnn.benchmark = False
 
 
+def add_opts(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--model",
+        type=str,
+        choices=["google/siglip-base-patch16-256-multilingual"],
+        help="SigLIP model to use",
+        default="google/siglip-base-patch16-256-multilingual",
+    )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        help="Data type for model weights",
+        choices=["float32", "float16", "bfloat16"],
+        default="float32",
+    )
+    parser.add_argument(
+        "--dataset_dir",
+        type=str,
+        help="Directory containing the dataset",
+        default="./data/UIT-OpenViIC",
+    )
+    parser.add_argument(
+        "--metadata_json_file",
+        type=str,
+        help="Metadata JSON file containing the dataset annotations",
+        default="train.json",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        help="Batch size for processing captions",
+        default=32,
+    )
+    parser.add_argument(
+        "--use_flash_attn",
+        action="store_true",
+        help="Whether to use flash attention if supported by the model",
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Pre-compute caption embeddings using a sentence-transformer model",
+        description="Pre-compute caption embeddings using SigLIP model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_opts(parser)

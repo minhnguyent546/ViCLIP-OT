@@ -87,6 +87,8 @@ class ImageEncoder(nn.Module):
 
         is_custom_pool = self.config.pool in ("abs_attn", "rot_attn")
         # TODO: initialize weights if `pretrained` is False
+        if not self.config.pretrained:
+            logger.info('Initializing ImageEncoder trunk with random weights.')
         self.trunk = timm.create_model(
             model_name=self.config.model_name,
             pretrained=self.config.pretrained,
@@ -223,7 +225,7 @@ class TextEncoder(nn.Module):
             _model_config = AutoConfig.from_pretrained(
                 self.config.model_name, trust_remote_code=True
             )
-            logger.info(f"Initializing TextEncoder {self.config.model_name} from scratch.")
+            logger.info(f"Initializing TextEncoder {self.config.model_name} with random weights.")
             self.encoder = AutoModel.from_config(_model_config, trust_remote_code=True)
 
         # TODO: this is a messy way, infer from modules.json should be better

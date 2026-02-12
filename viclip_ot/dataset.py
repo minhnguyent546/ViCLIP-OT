@@ -14,14 +14,14 @@ from viclip_ot.utils.logger import logger
 
 
 class ImageTextDataImage(BaseModel):
-    id: int
+    id: int | str
     image_path: str
 
 
 class ImageTextDataAnnotation(BaseModel):
-    id: int
+    id: int | str
     caption: str
-    image_id: int
+    image_id: int | str
 
 
 class ImageTextData(BaseModel):

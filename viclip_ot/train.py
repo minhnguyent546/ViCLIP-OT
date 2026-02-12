@@ -75,6 +75,7 @@ def train_model(args: argparse.Namespace) -> None:
     if args.sim_graph_regularized_ot and args.criterion in (
         "batch_level_entropic_ot_loss",
         "hybrid_clip_tp_loss",
+        "hybrid_sig_lip_tp_loss",
     ):
         if (
             args.precomputed_caption_embeddings_path is None
@@ -166,6 +167,12 @@ def train_model(args: argparse.Namespace) -> None:
             return 0.25 * (
                 sim_matrix_text + sim_matrix_image + sim_matrix_text2image + sim_matrix_image2text
             )
+        elif sim_combine_method == "cross_modality3":
+            # 1/3 * (text-text + text-image + image-text)
+            assert sim_matrix_text2image is not None and sim_matrix_image2text is not None, (
+                "sim_matrix_text2image and sim_matrix_image2text must be provided for cross_modality method."
+            )
+            return (1 / 3) * (sim_matrix_text + sim_matrix_text2image + sim_matrix_image2text)
         else:
             raise ValueError(f"Unsupported sim_combine_method: {sim_combine_method}")
 
@@ -181,6 +188,12 @@ def train_model(args: argparse.Namespace) -> None:
     elif args.criterion == "hybrid_clip_tp_loss":
         criterion = losses.HybridClipTPLoss(
             clip_loss_lambda=args.hybrid_clip_tp_loss_clip_loss_lambda,
+            sinkhorn_solver=args.sinkhorn_solver,
+            use_transport_plan_as_logits=args.use_transport_plan_as_logits,
+        )
+    elif args.criterion == "hybrid_sig_lip_tp_loss":
+        criterion = losses.HybridSigLipTPLoss(
+            sig_lip_loss_lambda=args.hybrid_sig_lip_tp_loss_sig_lip_loss_lambda,
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
         )
@@ -254,19 +267,19 @@ def train_model(args: argparse.Namespace) -> None:
 
     train_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
-        metadata_json_file="train.json",
+        metadata_json_file=f"{args.train_split_name}.json",
         image_transforms=train_transforms,
         model_fmt=model_fmt(),
     )
     test_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
-        metadata_json_file="test.json",
+        metadata_json_file=f"{args.test_split_name}.json",
         image_transforms=eval_transforms,
         model_fmt=model_fmt(),
     )
     val_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
-        metadata_json_file="val.json",
+        metadata_json_file=f"{args.val_split_name}.json",
         image_transforms=eval_transforms,
         model_fmt=model_fmt(),
     )
@@ -368,12 +381,12 @@ def train_model(args: argparse.Namespace) -> None:
         f"num_params: {utils.to_human_readable(num_model_params)} | num_trainable_params: {utils.to_human_readable(num_model_trainable_params)}"
     )
 
-    def _run_test_only() -> None:
+    def _run_test_only(data_loader: DataLoader) -> None:  # pyright: ignore[reportMissingTypeArgument]
         test_start_time = time.perf_counter()
         test_results = eval_model(
             model=model,
             criterion=criterion,
-            eval_data_loader=test_data_loader,
+            eval_data_loader=data_loader,
             device=device,
         )
         test_elapsed_time = time.perf_counter() - test_start_time
@@ -392,11 +405,13 @@ def train_model(args: argparse.Namespace) -> None:
             f"      i2t_R__10: {test_results['i2t_R__10']:0.6f}\n"
             f"      i2t_mean_rank: {test_results['i2t_mean_rank']:0.6f}\n"
             f"      i2t_median_rank: {test_results['i2t_median_rank']:0.6f}\n"
+            f"    Alignment_score: {test_results['alignment_score']:0.6f}\n"
+            f"    Modality_gap: {test_results['modality_gap']:0.6f}\n"
             f"    Elapsed time: {utils.to_hms(test_elapsed_time)}\n"
         )
 
     if args.run_test_only:
-        return _run_test_only()
+        return _run_test_only(test_data_loader)
 
     assert checkpoint_dir is not None
 
@@ -623,7 +638,12 @@ def train_model(args: argparse.Namespace) -> None:
 
                 if (
                     isinstance(
-                        criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                        criterion,
+                        (
+                            losses.BatchLevelEntropicOTLoss,
+                            losses.HybridClipTPLoss,
+                            losses.HybridSigLipTPLoss,
+                        ),
                     )
                     and caption_embeddings is not None
                     and image_embeddings is not None
@@ -688,7 +708,12 @@ def train_model(args: argparse.Namespace) -> None:
 
                 if (
                     isinstance(
-                        criterion, (losses.BatchLevelEntropicOTLoss, losses.HybridClipTPLoss)
+                        criterion,
+                        (
+                            losses.BatchLevelEntropicOTLoss,
+                            losses.HybridClipTPLoss,
+                            losses.HybridSigLipTPLoss,
+                        ),
                     )
                     and caption_embeddings is not None
                     and image_embeddings is not None
@@ -933,7 +958,7 @@ def train_model(args: argparse.Namespace) -> None:
         checkpoint = torch.load(best_checkpoint_path, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"], strict=True)
 
-        _run_test_only()
+        _run_test_only(test_data_loader)
 
 
 def main():
