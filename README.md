@@ -490,13 +490,13 @@ bash scripts/train_viclip_ot.sh
 
 You can run inference using a pretrained checkpoint as follows:
 ```bash
-uv run hf download minhnguyent546/ViCLIP-OT \
+hf download minhnguyent546/ViCLIP-OT \
     --local-dir checkpoints \
     --include visiglip_ot/visiglip_ot.pth
 ```
 
 ```bash
-uv run python -m viclip_ot.train \
+python -m viclip_ot.train \
   --run_test_only \
   --from_checkpoint ./checkpoints/visiglip_ot/visiglip_ot.pth \
   --seed 42 \
