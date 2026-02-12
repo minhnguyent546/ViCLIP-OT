@@ -363,11 +363,15 @@ You can find our pretrained models, configuration files, and training logs in th
 
 ### 3.1 Visual Interpretability of Retrieval
 
+The image below shows GradCAM visualization comparing the baseline **SigLIP** and the proposed **ViSigLIP-OT** on the UIT-OpenViIC test set. Each row shows the original image alongside the GradCAM heatmaps from both models for a given Vietnamese text query. In the first two rows, **ViSigLIP-OT** focuses more precisely on the query-relevant objects (the girl wearing an *Ao dai* and the man holding apples in his hands), while **SigLIP** spreads activations over background regions. In the third row, **SigLIP** correctly attends to the man standing next to a car, whereas **ViSigLIP-OT** highlights irrelevant background areas.
+
 <p align="center">
   <img src="./assets/grad_cam_comparison_siglip_versus_visiglip_ot3.jpg" alt="Visual Interpretability of Retrieval" width="712px">
 </p>
 
 ### 3.2 Visualization of Embedding Space
+
+The following image shows UMAP visualization of image and text embeddings on the UIT-OpenViIC test set. Each subplot corresponds to a different training objective. Circles represent image embeddings and triangles represent text embeddings, with colors indicating pseudo labels obtained via K-Means clustering ($k=20$). SIGROT-based methods exhibit tighter cross-modal clustering compared to baselines.
 
 <p align="center">
   <img src="./assets/visualize_embeddings_comparison_4_models.jpg" alt="Visual Interpretability of Retrieval" width="712px">
