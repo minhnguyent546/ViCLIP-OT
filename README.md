@@ -34,6 +34,8 @@ Table of Contents
       - [Setup](#setup)
     - [4.2 Datasets](#42-datasets)
       - [Dataset structure](#dataset-structure)
+      - [Remove near-duplicate images](#remove-near-duplicate-images)
+      - [Precompute image and caption embeddings](#precompute-image-and-caption-embeddings)
     - [4.3 Training](#43-training)
     - [4.4 Inference](#44-inference)
   - [5. Citing](#5-citing)
@@ -41,6 +43,8 @@ Table of Contents
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
 
 ## 1. Pretrained models
+
+You can find our pretrained models, configuration files, and training logs in the table below:
 
 | Model | Checkpoint link | Config | Training log |
 | :---: | :---: | :---: | :---: |
@@ -405,13 +409,65 @@ Table of Contents
 
 ### 4.2 Datasets
 
-> The dataset used in this study is not publicly available due to institutional or licensing restrictions. However, it can be made available for academic use upon reasonable request. Interested researchers may contact the authors for further information.
+> For convenience, we provide preprocessed versions of the datasets used in our experiments. You can download them from [Google Drive](https://drive.google.com/drive/folders/1EKd0WuHO1AF9fR3rwR_W0Uc4-hc5xIBY?usp=drive_link). We only converted these datasets into the desired format and did not perform any additional preprocessing.
+
+For all datasets, we use the original splits provided by the dataset authors and did not perform any additional splits. Links to the original data are provided below:
+
+| Dataset | Link to the original data |
+| :---: | :---: |
+| UIT-OpenViIC | [Google Drive](https://drive.google.com/drive/folders/1pTzFsnPt-QSEdED_0InKxgjZVjRWfmEW?usp=drive_link) |
+| KTVIC | [Github](https://github.com/pacman-ctm/ktvic) |
+| Crossmodal-3600 | [Dataset homepage](https://google.github.io/crossmodal-3600/) |
 
 #### Dataset structure
 
+The dataset directory should be organized as follows:
+
+```bash
+dataset_root/
+├── images
+│    ├── 000001.jpg
+│    ├── 000002.png
+│    ├── ...
+│    └── nnnnnn.jpg
+├── train.json
+├── test.json
+└── val.json
 ```
-WIP
+
+Where `train.json`, `test.json`, and `val.json` are metadata files and have the following format:
+```json
+{
+    "images": [
+        {"id": 1, "image_path": "images/000001.jpg"},
+        {"id": 2, "image_path": "images/000002.png"},
+        ...
+    ],
+    "annotations": [
+        {"id": 1, "caption": "A caption for image 1", "image_id": 1},
+        {"id": 2, "caption": "A caption for image 2", "image_id": 2},
+        ...
+    ]
+}
 ```
+#### Remove near-duplicate images
+
+Refer to [scripts/remove_near_duplicates](./scripts/remove_near_duplicates) for a detail on how to remove near-duplicate images.
+
+#### Precompute image and caption embeddings
+
+To precompute image and caption embeddings using Qwen3-VL-Embedding-2B, you can run the following commands:
+
+```bash
+python scripts/compute_embeddings_qwen3_vl_embedding.py \
+  --model Qwen/Qwen3-VL-Embedding-2B \
+  --instruction "Retrieve images or text relevant to the user's query" \
+  --dtype bfloat16 \
+  --dataset_dir ./data/UIT-OpenViIC \
+  --metadata_json_file test.json \
+  --batch_size 32 \
+  --normalize
+ ```
 
 ### 4.3 Training
 
