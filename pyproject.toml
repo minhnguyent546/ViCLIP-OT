@@ -1,7 +1,7 @@
 [project]
 name = "ViCLIP-OT"
 version = "0.1.0"
-description = "ViCLIP-OT"
+description = "ViCLIP-OT: The First Foundation Vision-Language Model for Vietnamese Image–Text Retrieval with Optimal Transport"
 readme = "README.md"
 license = "GPL-3.0"
 requires-python = ">=3.12"
@@ -36,7 +36,6 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/minhnguyent546/ViCLIP-OT"
 Repository = "https://github.com/minhnguyent546/ViCLIP-OT"
-Changelog = "https://github.com/minhnguyent546/ViCLIP-OT/blob/master/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
