@@ -45,7 +45,7 @@ Table of Contents
 
 ## 1. Pretrained models
 
-You can find our pretrained models, configuration files, and training logs in the table below:
+Our pretrained checkpoints, configuration files, and training logs are available for download:
 
 | Model | Checkpoint link | Config | Training log |
 | :---: | :---: | :---: | :---: |
@@ -58,6 +58,8 @@ You can find our pretrained models, configuration files, and training logs in th
 ## 2. Quantitative Results
 
 ### 2.1 Image-text retrieval results
+
+The table below summarizes retrieval performance on the UIT-OpenViIC test set. Both models also substantially outperform pretrained multilingual vision-language models evaluated in a zero-shot setting.
 
 <table>
   <caption>
@@ -206,6 +208,8 @@ You can find our pretrained models, configuration files, and training logs in th
 </table>
 
 ### 2.2 Zero-shot image–text retrieval results on KTVIC and Crossmodal-360
+
+The table below reports zero-shot retrieval results on KTVIC (with near-duplicate images removed against the UIT-OpenViIC training set) and Crossmodal-3600 (using Vietnamese captions).
 
 <table>
   <caption>
@@ -489,7 +493,7 @@ bash scripts/train_viclip_ot.sh
 
 ### 4.4 Inference
 
-You can run inference using a pretrained checkpoint as follows:
+You can run inference using our pretrained checkpoint as follows:
 ```bash
 hf download minhnguyent546/ViCLIP-OT \
     --local-dir checkpoints \
