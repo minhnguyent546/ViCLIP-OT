@@ -22,6 +22,7 @@ Table of Contents
 
 - [ViCLIP-OT — The First Foundation Vision-Language Model for Vietnamese Image–Text Retrieval with Optimal Transport](#viclip-ot--the-first-foundation-vision-language-model-for-vietnamese-imagetext-retrieval-with-optimal-transport)
 - [Table of Contents](#table-of-contents)
+  - [Highlights](#highlights)
   - [1. Pretrained models](#1-pretrained-models)
   - [2. Quantitative Results](#2-quantitative-results)
     - [2.1 Image-text retrieval results](#21-image-text-retrieval-results)
@@ -42,6 +43,13 @@ Table of Contents
   - [5. Citing](#5-citing)
 
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
+
+## Highlights
+
+- ViCLIP-OT is the first large-scale vision-language model specifically developed for Vietnamese image-text retrieval.
+- ViCLIP-OT combines CLIP-style contrastive learning with a novel similarity-graph regularized optimal transport (SIGROT) loss to enhance cross-modal alignment.
+- ViCLIP-OT achieves state-of-the-art performance on three Vietnamese image-text retrieval benchmarks, demonstrating strong zero-shot generalization.
+- The proposed SIGROT loss effectively captures global relational structure among samples, improving retrieval accuracy. *Modality gap* reduction between image and text embeddings is achieved through the SIGROT loss.
 
 ## 1. Pretrained models
 
