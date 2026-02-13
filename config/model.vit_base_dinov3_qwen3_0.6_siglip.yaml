@@ -7,8 +7,8 @@ image_config:
   proj_dropout_rate: 0.1
 
 text_config:
-  model_name: google/embeddinggemma-300m
-  proj: none
+  model_name: qwen/qwen3-embedding-0.6b
+  proj: linear
   proj_bias: false
 
 embed_dim: 768
