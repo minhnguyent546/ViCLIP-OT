@@ -49,7 +49,7 @@ Table of Contents
 - ViCLIP-OT is the first large-scale vision-language model specifically developed for Vietnamese image-text retrieval.
 - ViCLIP-OT combines CLIP-style contrastive learning with a novel similarity-graph regularized optimal transport (SIGROT) loss to enhance cross-modal alignment.
 - ViCLIP-OT achieves state-of-the-art performance on three Vietnamese image-text retrieval benchmarks, demonstrating strong zero-shot generalization.
-- The proposed SIGROT loss effectively captures global relational structure among samples, improving retrieval accuracy. *Modality gap* reduction between image and text embeddings is achieved through the SIGROT loss.
+- The proposed SIGROT loss effectively captures global relational structure among samples, improving retrieval accuracy. Furthermore, it reduces the *modality gap* between image and text embeddings and promotes better cross-modal alignment in the shared latent space.
 
 ## 1. Pretrained models
 

@@ -88,7 +88,7 @@ class ImageEncoder(nn.Module):
         is_custom_pool = self.config.pool in ("abs_attn", "rot_attn")
         # TODO: initialize weights if `pretrained` is False
         if not self.config.pretrained:
-            logger.info('Initializing ImageEncoder trunk with random weights.')
+            logger.info("Initializing ImageEncoder trunk with random weights.")
         self.trunk = timm.create_model(
             model_name=self.config.model_name,
             pretrained=self.config.pretrained,
