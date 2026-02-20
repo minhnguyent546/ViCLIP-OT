@@ -53,7 +53,7 @@ Table of Contents
 
 ## 1. Pretrained models
 
-Our pretrained checkpoints, configuration files, and training logs are available for download:
+Pretrained checkpoints, configuration files, and training logs are available for download:
 
 | Model | Checkpoint link | Config | Training log |
 | :---: | :---: | :---: | :---: |
@@ -63,7 +63,7 @@ Our pretrained checkpoints, configuration files, and training logs are available
 | SigLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/siglip/siglip.pth) | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/siglip/training.log) |
 | SIGROT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/sigrot/sigrot.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/sigrot/training.log) |
 
-You can also use our models via Transformers:
+ViCLIP-OT models can also be used via Transformers:
 ```python
 # Install these first: `uv run pip install einops timm pillow`
 from transformers import AutoModel, AutoProcessor
