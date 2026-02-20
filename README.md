@@ -3,7 +3,7 @@
 <p>
   <a href="https://arxiv.org/abs/1234.56789"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat"></a>
   <a href="https://www.python.org"><img alt="Python" src="https://img.shields.io/badge/python-3.12%20%7C%203.13-3776AB.svg?style=flat&logo=python&logoColor=white"></a>
-  <a href="https://pytorch.org"><img alt="Torch" src="https://img.shields.io/badge/PyTorch-2.8.0-EE4C2C.svg?style=flat&logo=pytorch"></a>
+  <a href="https://pytorch.org"><img alt="Torch" src="https://img.shields.io/badge/PyTorch-2.8.0+cu128-EE4C2C.svg?style=flat&logo=pytorch"></a>
   <a href="https://github.com/minhnguyent546/ViCLIP-OT/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/minhnguyent546/ViCLIP-OT"></a>
 </p>
 
@@ -62,6 +62,57 @@ Our pretrained checkpoints, configuration files, and training logs are available
 | CLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/clip/clip.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/clip/training.log) |
 | SigLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/siglip/siglip.pth) | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/siglip/training.log) |
 | SIGROT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/sigrot/sigrot.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/sigrot/training.log) |
+
+You can also use our models via Transformers:
+```python
+# Install these first: `uv run pip install einops timm pillow`
+from transformers import AutoModel, AutoProcessor
+import torch
+
+# Initialize the model
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
+model = AutoModel.from_pretrained('minhnguyent546/ViSigLIP-OT', trust_remote_code=True).to(device)
+
+# Example images and sentences
+image_uris = [
+    'http://images.cocodataset.org/train2014/COCO_train2014_000000138621.jpg',
+    'http://images.cocodataset.org/train2014/COCO_train2014_000000190580.jpg',
+]
+sentences = [
+    'Một con mèo màu trắng',
+    'Một con mèo màu đen',
+    'Một cô gái đang lướt sóng',
+]
+
+# Encode text
+text_embeddings = model.encode_text(
+    sentences=sentences,
+    batch_size=32,
+    show_progress_bar=True,
+    convert_to_tensor=True,
+    normalize=True,
+    padding=True,
+    truncation=True,
+    max_length=512,
+)
+
+# Encode images
+image_embeddings = model.encode_image(
+    images=image_uris,
+    batch_size=32,
+    show_progress_bar=True,
+    convert_to_tensor=True,
+    normalize=True,
+)
+
+# Compute cosine similarity between image and text embeddings
+logits_per_image = image_embeddings @ text_embeddings.T
+print(logits_per_image)
+
+# tensor([[0.2438, 0.1506, 0.7248],
+#         [0.4299, 0.5287, 0.2329]])
+```
 
 ## 2. Quantitative Results
 
@@ -523,8 +574,7 @@ python -m viclip_ot.train \
 
 ## 5. Citing
 
-If you find this repository useful for your research, please consider citing:
-
+If you find ViCLIP-OT useful in your research, please cite the following paper:
 ```bibtex
 WIP
 ```
