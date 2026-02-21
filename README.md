@@ -40,7 +40,8 @@ Table of Contents
       - [Precompute image and caption embeddings](#precompute-image-and-caption-embeddings)
     - [4.3 Training](#43-training)
     - [4.4 Inference](#44-inference)
-  - [5. Citing](#5-citing)
+  - [5. License](#5-license)
+  - [6. Citing](#6-citing)
 
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
 
@@ -57,15 +58,19 @@ Pretrained checkpoints, configuration files, and training logs are available for
 
 | Model | Checkpoint link | Config | Training log |
 | :---: | :---: | :---: | :---: |
-| ViCLIP-OT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/viclip_ot/viclip_ot.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) |  [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/viclip_ot/training.log) |
-| ViSigLIP-OT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/visiglip_ot/visiglip_ot.pth) | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/visiglip_ot/training.log) |
-| CLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/clip/clip.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/clip/training.log) |
-| SigLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/siglip/siglip.pth) | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/siglip/training.log) |
-| SIGROT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/sigrot/sigrot.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT/blob/main/sigrot/training.log) |
+| ViCLIP-OT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/viclip_ot/viclip_ot.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) |  [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/viclip_ot/training.log) |
+| ViSigLIP-OT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/visiglip_ot/visiglip_ot.pth) | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/visiglip_ot/training.log) |
+| CLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/clip/clip.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/clip/training.log) |
+| SigLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/siglip/siglip.pth) | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/siglip/training.log) |
+| SIGROT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/sigrot/sigrot.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/sigrot/training.log) |
 
 ViCLIP-OT models can also be used via Transformers:
+
+<details>
+    <summary>Example usage with Transformers</summary>
+
 ```python
-# Install these first: `uv run pip install einops timm pillow`
+# uv run pip install 'transformers>=4.57.3,<5.0.0' 'torch>=2.8.0,<3.0.0' timm pillow einops
 from transformers import AutoModel, AutoProcessor
 import torch
 
@@ -113,6 +118,7 @@ print(logits_per_image)
 # tensor([[0.2438, 0.1506, 0.7248],
 #         [0.4299, 0.5287, 0.2329]])
 ```
+</details>
 
 ## 2. Quantitative Results
 
@@ -572,7 +578,11 @@ python -m viclip_ot.train \
   --num_workers 4
 ```
 
-## 5. Citing
+## 5. License
+
+This project is licensed under the GNU General Public License v3.0 (GPL-3.0). See [LICENSE](./LICENSE) for license details.
+
+## 6. Citing
 
 If you find ViCLIP-OT useful in your research, please cite the following paper:
 ```bibtex
