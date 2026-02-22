@@ -26,7 +26,7 @@ Table of Contents
   - [1. Pretrained models](#1-pretrained-models)
   - [2. Quantitative Results](#2-quantitative-results)
     - [2.1 Image-text retrieval results](#21-image-text-retrieval-results)
-    - [2.2 Zero-shot image–text retrieval results on KTVIC and Crossmodal-360](#22-zero-shot-imagetext-retrieval-results-on-ktvic-and-crossmodal-360)
+    - [2.2 Zero-shot image–text retrieval results on KTVIC and Crossmodal-3600](#22-zero-shot-imagetext-retrieval-results-on-ktvic-and-crossmodal-3600)
   - [3. Qualitative Results](#3-qualitative-results)
     - [3.1 Visual Interpretability of Retrieval](#31-visual-interpretability-of-retrieval)
     - [3.2 Visualization of Embedding Space](#32-visualization-of-embedding-space)
@@ -56,28 +56,37 @@ Table of Contents
 
 Pretrained checkpoints, configuration files, and training logs are available for download:
 
-| Model | Checkpoint link | Config | Training log |
-| :---: | :---: | :---: | :---: |
-| ViCLIP-OT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/viclip_ot/viclip_ot.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) |  [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/viclip_ot/training.log) |
+|    Model    |                                                   Checkpoint link                                                   |                           Config                           |                                                  Training log                                                  |
+| :---------: | :-----------------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------: |
+|  ViCLIP-OT  |   🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/viclip_ot/viclip_ot.pth)   |    [config](./config/model.vit_base_dinov3_sbert.yaml)     |  [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/viclip_ot/training.log)  |
 | ViSigLIP-OT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/visiglip_ot/visiglip_ot.pth) | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/visiglip_ot/training.log) |
-| CLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/clip/clip.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/clip/training.log) |
-| SigLIP | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/siglip/siglip.pth) | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/siglip/training.log) |
-| SIGROT | 🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/sigrot/sigrot.pth) | [config](./config/model.vit_base_dinov3_sbert.yaml) | [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/sigrot/training.log) |
+|    CLIP     |        🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/clip/clip.pth)        |    [config](./config/model.vit_base_dinov3_sbert.yaml)     |    [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/clip/training.log)     |
+|   SigLIP    |      🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/siglip/siglip.pth)      | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) |   [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/siglip/training.log)    |
+|   SIGROT    |      🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/sigrot/sigrot.pth)      |    [config](./config/model.vit_base_dinov3_sbert.yaml)     |   [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/sigrot/training.log)    |
 
 ViCLIP-OT models can also be used via Transformers:
 
 <details>
     <summary>Example usage with Transformers</summary>
 
+```bash
+pip install \
+    'transformers>=4.57.3,<5.0.0' \
+    'torch>=2.8.0,<2.10.0' \
+    'torchvision>=0.23.0,<0.25.0' \
+    timm \
+    pillow
+```
+
 ```python
-# uv run pip install 'transformers>=4.57.3,<5.0.0' 'torch>=2.8.0,<3.0.0' timm pillow einops
 from transformers import AutoModel, AutoProcessor
 import torch
 
 # Initialize the model
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Using device: {device}')
-model = AutoModel.from_pretrained('minhnguyent546/ViSigLIP-OT', trust_remote_code=True).to(device)
+model = AutoModel.from_pretrained('minhnguyent546/ViSigLIP-OT', trust_remote_code=True)
+model.to(device)
 
 # Example images and sentences
 image_uris = [
@@ -112,11 +121,11 @@ image_embeddings = model.encode_image(
 )
 
 # Compute cosine similarity between image and text embeddings
-logits_per_image = image_embeddings @ text_embeddings.T
-print(logits_per_image)
+similarities = image_embeddings @ text_embeddings.T
+print(similarities)
 
-# tensor([[0.2438, 0.1506, 0.7248],
-#         [0.4299, 0.5287, 0.2329]])
+# tensor([[ 0.0677, -0.0673,  0.5587],
+#         [ 0.2560,  0.4277,  0.0467]])
 ```
 </details>
 
@@ -272,7 +281,7 @@ The table below summarizes retrieval performance on the UIT-OpenViIC test set. B
   </tbody>
 </table>
 
-### 2.2 Zero-shot image–text retrieval results on KTVIC and Crossmodal-360
+### 2.2 Zero-shot image–text retrieval results on KTVIC and Crossmodal-3600
 
 The table below reports zero-shot retrieval results on KTVIC (with near-duplicate images removed against the UIT-OpenViIC training set) and Crossmodal-3600 (using Vietnamese captions).
 
@@ -487,11 +496,11 @@ The following image shows UMAP visualization of image and text embeddings on the
 
 For all datasets, we use the original splits provided by the dataset authors and did not perform any additional splits. Links to the original data are provided below:
 
-| Dataset | Link to the original data |
-| --- | --- |
-| UIT-OpenViIC | [Google Drive](https://drive.google.com/drive/folders/1pTzFsnPt-QSEdED_0InKxgjZVjRWfmEW?usp=drive_link) |
-| KTVIC | [Github](https://github.com/pacman-ctm/ktvic) |
-| Crossmodal-3600 | [Dataset homepage](https://google.github.io/crossmodal-3600/) |
+| Dataset         | Link to the original data                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------- |
+| UIT-OpenViIC    | [Google Drive](https://drive.google.com/drive/folders/1pTzFsnPt-QSEdED_0InKxgjZVjRWfmEW?usp=drive_link) |
+| KTVIC           | [Github](https://github.com/pacman-ctm/ktvic)                                                           |
+| Crossmodal-3600 | [Dataset homepage](https://google.github.io/crossmodal-3600/)                                           |
 
 #### Dataset structure
 
@@ -514,13 +523,12 @@ Where `train.json`, `test.json`, and `val.json` are metadata files and have the 
 {
     "images": [
         {"id": 1, "image_path": "images/000001.jpg"},
-        {"id": 2, "image_path": "images/000002.png"},
-        ...
+        {"id": 2, "image_path": "images/000002.png"}
     ],
     "annotations": [
         {"id": 1, "caption": "A caption for image 1", "image_id": 1},
         {"id": 2, "caption": "A caption for image 2", "image_id": 2},
-        ...
+        {"id": 3, "caption": "Another caption for image 2", "image_id": 2}
     ]
 }
 ```
