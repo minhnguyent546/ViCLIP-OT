@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import os
 from copy import deepcopy
-from typing import Any, Literal, Self
+from typing import Any, Literal
 
 import torch
 from transformers import PretrainedConfig, logging
@@ -57,7 +59,7 @@ class ViCLIPOTTextConfig(PretrainedConfig):
         token: str | bool | None = None,
         revision: str = "main",
         **kwargs,
-    ) -> Self:
+    ) -> ViCLIPOTTextConfig:
         cls._set_token_in_kwargs(kwargs=kwargs, token=token)
 
         configdict, kwargs = cls.get_config_dict(
@@ -141,7 +143,7 @@ class ViCLIPOTVisionConfig(PretrainedConfig):
         token: str | bool | None = None,
         revision: str = "main",
         **kwargs,
-    ) -> Self:
+    ) -> ViCLIPOTVisionConfig:
         cls._set_token_in_kwargs(kwargs=kwargs, token=token)
 
         configdict, kwargs = cls.get_config_dict(
@@ -303,7 +305,7 @@ class ViCLIPOTConfig(PretrainedConfig):
         text_config: ViCLIPOTTextConfig,
         vision_config: ViCLIPOTVisionConfig,
         **kwargs,
-    ) -> Self:
+    ) -> ViCLIPOTConfig:
         return cls(
             text_config=text_config.to_dict(),
             vision_config=vision_config.to_dict(),
