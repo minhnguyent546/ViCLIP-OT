@@ -483,7 +483,7 @@ The following image shows UMAP visualization of image and text embeddings on the
 
 ### 4.2 Datasets
 
-> For convenience, we provide preprocessed versions of the datasets used in our experiments. You can download them from [Google Drive](https://drive.google.com/drive/folders/1EKd0WuHO1AF9fR3rwR_W0Uc4-hc5xIBY?usp=drive_link). We only converted these datasets into the desired format and did not perform any additional preprocessing.
+> For convenience, we provide preprocessed versions of the datasets used in our experiments. You can download them from [Google Drive](https://drive.google.com/drive/folders/1EKd0WuHO1AF9fR3rwR_W0Uc4-hc5xIBY?usp=drive_link). We only converted these datasets into the desired format and did not perform any additional preprocessing. The authors do not own any of the images and annotations in these datasets and acknowledge the original dataset creators and/or copyright holders. All images and annotations are used for research purposes only.
 
 For all datasets, we use the original splits provided by the dataset authors and did not perform any additional splits. Links to the original data are provided below:
 
