@@ -644,6 +644,15 @@ class ViCLIPOTModel(ViCLIPOTPretrainedModel):
         *_,
         **__,
     ) -> torch.Tensor:
+        if isinstance(input_ids, dict):
+            input_ids = {
+                k: v.type(self.text_model.dtype)
+                for k, v in input_ids.items()
+                if isinstance(v, torch.Tensor)
+            }
+        else:
+            input_ids = input_ids.type(self.text_model.dtype)
+
         return self.text_model(
             input_ids=input_ids, normalize=normalize, return_dict=return_dict
         ).text_features
@@ -659,6 +668,7 @@ class ViCLIPOTModel(ViCLIPOTPretrainedModel):
         pixel_values = (
             pixel_values.pixel_values if isinstance(pixel_values, BatchFeature) else pixel_values
         )
+        pixel_values = pixel_values.type(self.vision_model.dtype)
         return self.vision_model(
             pixel_values=pixel_values, normalize=normalize, return_dict=return_dict
         ).image_features
