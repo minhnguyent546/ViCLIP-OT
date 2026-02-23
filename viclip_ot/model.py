@@ -13,7 +13,7 @@ from safetensors.torch import load_file as load_safetensors
 from timm.layers.attention_pool2d import AttentionPool2d as AbsAttentionPool2d
 from timm.layers.attention_pool2d import RotAttentionPool2d
 from timm.layers.mlp import Mlp
-from timm.models.helpers import group_modules, group_parameters
+from timm.models import group_modules, group_parameters
 from torch import Tensor
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
@@ -504,7 +504,6 @@ class TextEncoder(nn.Module):
         return y
 
 
-# TODO: add logit_scale
 class ViCLIPOT(nn.Module):
     """ViCLIP-OT model."""
 

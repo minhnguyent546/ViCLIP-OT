@@ -4,8 +4,16 @@
 
   "venv": ".venv",
   "venvPath": ".",
+  "include": [
+    "viclip_ot",
+    "scripts",
+    "notebooks"
+  ],
 
   "typeCheckingMode": "strict",
+
+  "reportUnnecessaryComparison": "none",
+  "reportUnnecessaryIsInstance": "none",
 
   // disable some settings for incomplete stubs
   "reportIncompleteStub": "none",
