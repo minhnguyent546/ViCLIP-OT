@@ -570,7 +570,7 @@ bash scripts/train_viclip_ot.sh
 
 You can run inference using our pretrained checkpoint as follows:
 ```bash
-hf download minhnguyent546/ViCLIP-OT \
+hf download minhnguyent546/ViCLIP-OT-checkpoints \
     --local-dir checkpoints \
     --include visiglip_ot/visiglip_ot.pth
 ```
