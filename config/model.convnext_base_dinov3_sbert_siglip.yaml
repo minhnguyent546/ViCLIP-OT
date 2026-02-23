@@ -1,0 +1,16 @@
+image_config:
+  model_name: timm/convnext_base.dinov3_lvd1689m
+  pretrained: true
+  pool: avg
+  proj: linear # low-resource
+  proj_bias: false
+  proj_dropout_rate: 0.1
+
+text_config:
+  model_name: keepitreal/vietnamese-sbert
+  proj: none
+  proj_bias: false
+
+embed_dim: 768
+initial_temperature: 0.06
+logit_bias: -9

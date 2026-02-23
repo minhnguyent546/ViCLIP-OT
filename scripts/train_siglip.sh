@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 
+export WANDB_API_KEY='<YOUR_WANDB_API_KEY_HERE>'
+
 uv run python -m viclip_ot.train \
+  --optimizer adamw \
+  --adam_eps 1e-10 \
   --seed 42 \
-  --model_config ./config/model.vit_base_dinov3.yaml \
+  --model_config ./config/model.vit_base_dinov3_sbert_siglip.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
   --train_batch_size 16 \
   --eval_batch_size 32 \
@@ -18,15 +22,16 @@ uv run python -m viclip_ot.train \
   --lr 2e-4 \
   --backbone_lr 5e-5 \
   --lock_image \
-  --lock_image_last_unfreeze_groups 2 \
+  --lock_image_last_unfreeze_groups 14 \
   --weight_decay 1e-4 \
   --scheduler one_cycle_lr \
   --min_lr 1e-6 \
   --lr_warmup_epochs 2 \
   --lr_warmup_method linear \
-  --best_checkpoint_metrics t2i_R__1 i2t_R__1 \
+  --best_checkpoint_metrics t2i_R__1 \
   --save_best_k 5 \
   --max_grad_norm 1.0 \
   --wandb_logging \
-  --wandb_project viclip_ot_test \
-  --wandb_name cliploss_vit_base_dinov3_gemma300m_openviic_final_30
+  --wandb_project viclip_ot \
+  --wandb_name siglip \
+  --criterion sig_lip_loss
