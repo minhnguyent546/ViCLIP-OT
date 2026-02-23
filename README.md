@@ -129,6 +129,8 @@ print(similarities)
 ```
 </details>
 
+For example inference with Transformers, refer to [example_inference.ipynb](./notebooks/example_inference.ipynb).
+
 ## 2. Quantitative Results
 
 ### 2.1 Image-text retrieval results
