@@ -78,6 +78,11 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Whether to normalize the embeddings",
     )
+    parser.add_argument(
+        "--use_flash_attn",
+        action="store_true",
+        help="Whether to use flash attention if supported by the model",
+    )
 
 
 def compute_embeddings(args: argparse.Namespace) -> None:
