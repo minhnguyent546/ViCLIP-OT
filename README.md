@@ -2,6 +2,7 @@
 
 <p>
   <a href="https://arxiv.org/abs/1234.56789"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat"></a>
+  <a href="https://huggingface.co/collections/minhnguyent546/viclip-ot"><img alt="Model on Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue"></a>
   <a href="https://www.python.org"><img alt="Python" src="https://img.shields.io/badge/python-3.12%20%7C%203.13-3776AB.svg?style=flat&logo=python&logoColor=white"></a>
   <a href="https://pytorch.org"><img alt="Torch" src="https://img.shields.io/badge/PyTorch-2.8.0+cu128-EE4C2C.svg?style=flat&logo=pytorch"></a>
   <a href="https://github.com/minhnguyent546/ViCLIP-OT/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/minhnguyent546/ViCLIP-OT"></a>
