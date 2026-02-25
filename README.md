@@ -65,14 +65,14 @@ Pretrained checkpoints, configuration files, and training logs are available for
 |   SigLIP    |      🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/siglip/siglip.pth)      | [config](./config/model.vit_base_dinov3_sbert_siglip.yaml) |   [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/siglip/training.log)    |
 |   SIGROT    |      🤗 [Hugging Face](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/sigrot/sigrot.pth)      |    [config](./config/model.vit_base_dinov3_sbert.yaml)     |   [training log](https://huggingface.co/minhnguyent546/ViCLIP-OT-checkpoints/blob/main/sigrot/training.log)    |
 
-ViCLIP-OT models can also be used via Transformers:
+ViCLIP-OT models can also be used via `transformers` and `sentence-transformers`:
 
 <details>
-    <summary>Example usage with Transformers</summary>
+    <summary>via <a href="https://huggingface.co/docs/transformers/en/index">transformers</a></summary>
 
 ```bash
 pip install \
-    'transformers>=4.57.3,<5.0.0' \
+    'transformers>=4.57.0,<5.0.0' \
     'torch>=2.8.0,<2.10.0' \
     'torchvision>=0.23.0,<0.25.0' \
     timm \
@@ -130,7 +130,64 @@ print(similarities)
 ```
 </details>
 
-For example inference with Transformers, refer to [example_inference.ipynb](./notebooks/example_inference.ipynb).
+<details>
+    <summary>via <a href="https://sbert.net/">sentence-transformers</a></summary>
+
+```bash
+pip install \
+    'transformers>=4.57.0,<5.0.0' \
+    'sentence-transformers>=4.0.0' \
+    'torch>=2.8.0,<2.10.0' \
+    'torchvision>=0.23.0,<0.25.0' \
+    timm \
+    pillow
+```
+
+```python
+from sentence_transformers import SentenceTransformer
+
+# Initialize the model
+model = SentenceTransformer('minhnguyent546/ViSigLIP-OT', trust_remote_code=True)
+
+# Example images and sentences
+image_uris = [
+    'http://images.cocodataset.org/train2014/COCO_train2014_000000138621.jpg',
+    'http://images.cocodataset.org/train2014/COCO_train2014_000000190580.jpg',
+]
+sentences = [
+    'Một con mèo màu trắng',
+    'Một con mèo màu đen',
+    'Một cô gái đang lướt sóng',
+]
+
+# Encode text
+text_embeddings = model.encode(
+    sentences,
+    batch_size=32,
+    show_progress_bar=True,
+    convert_to_tensor=True,
+    normalize_embeddings=True,
+)
+
+# Encode images
+image_embeddings = model.encode(
+    image_uris,
+    batch_size=32,
+    show_progress_bar=True,
+    convert_to_tensor=True,
+    normalize_embeddings=True,
+)
+
+# Compute cosine similarity between image and text embeddings
+similarities = image_embeddings @ text_embeddings.T
+print(similarities)
+
+# tensor([[ 0.0677, -0.0673,  0.5587],
+#         [ 0.2560,  0.4277,  0.0467]])
+```
+</details>
+
+For example inference with Transformers, please refer to [example_inference.ipynb](./notebooks/example_inference.ipynb).
 
 ## 2. Quantitative Results
 
