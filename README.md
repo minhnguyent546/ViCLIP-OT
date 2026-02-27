@@ -1,7 +1,7 @@
 # ViCLIP-OT &mdash; The First Foundation Vision-Language Model for Vietnamese Image–Text Retrieval with Optimal Transport
 
 <p>
-  <a href="https://arxiv.org/abs/1234.56789"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat"></a>
+  <a href="https://arxiv.org/abs/2602.22678"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-2602.22678-b31b1b.svg?style=flat"></a>
   <a href="https://huggingface.co/collections/minhnguyent546/viclip-ot"><img alt="Model on Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue"></a>
   <a href="https://www.python.org"><img alt="Python" src="https://img.shields.io/badge/python-3.12%20%7C%203.13-3776AB.svg?style=flat&logo=python&logoColor=white"></a>
   <a href="https://pytorch.org"><img alt="Torch" src="https://img.shields.io/badge/PyTorch-2.8.0+cu128-EE4C2C.svg?style=flat&logo=pytorch"></a>
@@ -24,6 +24,7 @@ Table of Contents
 - [ViCLIP-OT — The First Foundation Vision-Language Model for Vietnamese Image–Text Retrieval with Optimal Transport](#viclip-ot--the-first-foundation-vision-language-model-for-vietnamese-imagetext-retrieval-with-optimal-transport)
 - [Table of Contents](#table-of-contents)
   - [Highlights](#highlights)
+  - [News](#news)
   - [1. Pretrained models](#1-pretrained-models)
   - [2. Quantitative Results](#2-quantitative-results)
     - [2.1 Image-text retrieval results](#21-image-text-retrieval-results)
@@ -52,6 +53,12 @@ Table of Contents
 - ViCLIP-OT combines CLIP-style contrastive learning with a novel similarity-graph regularized optimal transport (SIGROT) loss to enhance cross-modal alignment.
 - ViCLIP-OT achieves state-of-the-art performance on three Vietnamese image-text retrieval benchmarks, demonstrating strong zero-shot generalization.
 - The proposed SIGROT loss effectively captures global relational structure among samples, improving retrieval accuracy. Furthermore, it reduces the *modality gap* between image and text embeddings and promotes better cross-modal alignment in the shared latent space.
+
+
+## News
+
+- **[2026/02/26]** Preprint submitted to arXiv.
+
 
 ## 1. Pretrained models
 
