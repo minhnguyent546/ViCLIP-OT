@@ -661,10 +661,13 @@ This project is licensed under the GNU General Public License v3.0 (GPL-3.0). Se
 
 If you find ViCLIP-OT useful in your research, please cite the following paper:
 ```bibtex
-@article{tran2026viclip,
-  title={ViCLIP-OT: The First Foundation Vision-Language Model for Vietnamese Image-Text Retrieval with Optimal Transport},
-  author={Tran, Quoc-Khang and Nguyen, Minh-Thien and Pham, Nguyen-Khang},
-  journal={arXiv preprint arXiv:2602.22678},
-  year={2026}
+@misc{tran2026viclipotfoundationvisionlanguagemodel,
+    title={ViCLIP-OT: The First Foundation Vision-Language Model for Vietnamese Image-Text Retrieval with Optimal Transport},
+    author={Quoc-Khang Tran and Minh-Thien Nguyen and Nguyen-Khang Pham},
+    year={2026},
+    eprint={2602.22678},
+    archivePrefix={arXiv},
+    primaryClass={cs.CV},
+    url={https://arxiv.org/abs/2602.22678},
 }
 ```
