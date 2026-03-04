@@ -24,10 +24,17 @@ _*
 .pytest_cache
 .ruff_cache
 
+# shell scripts
+s.sh
+
 # other
 /wandb
 *.bak
 *.backup
-
-# shell scripts
-s.sh
+/*.pdf
+/*.json
+/notebooks/*.png
+/hf/tmp/
+/hf/ViCLIP-OT/
+/hf/ViSigLIP-OT/
+/ablation*.sh

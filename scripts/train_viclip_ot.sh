@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 
+export WANDB_API_KEY='<YOUR_WANDB_API_KEY_HERE>'
+
 uv run python -m viclip_ot.train \
+  --optimizer adamw \
+  --adam_eps 1e-10 \
   --seed 42 \
   --model_config ./config/model.vit_base_dinov3_sbert.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
@@ -13,12 +17,12 @@ uv run python -m viclip_ot.train \
   --num_epochs 30 \
   --num_workers 8 \
   --log_file_interval 3 \
-  --mixed_precision fp16 \
+  --mixed_precision bf16 \
   --gradient_accum_steps 8 \
   --lr 2e-4 \
   --backbone_lr 5e-5 \
   --lock_image \
-  --lock_image_last_unfreeze_groups 2 \
+  --lock_image_last_unfreeze_groups 14 \
   --weight_decay 1e-4 \
   --scheduler one_cycle_lr \
   --min_lr 1e-6 \
@@ -28,5 +32,12 @@ uv run python -m viclip_ot.train \
   --save_best_k 5 \
   --max_grad_norm 1.0 \
   --wandb_logging \
-  --wandb_project viclip_ot_test \
-  --wandb_name cliploss_vit_base_dinov3_sbert_openviic_final_30
+  --wandb_project viclip_ot \
+  --wandb_name viclip_ot \
+  --precomputed_image_embeddings_path ./data/UIT-OpenViIC-embeddings/train_image_embeddings_qwen3_vl_embedding_2b.pt  \
+  --precomputed_caption_embeddings_path ./data/UIT-OpenViIC-embeddings/train_caption_embeddings_qwen3_vl_embedding_2b.pt \
+  --sim_graph_regularized_ot \
+  --sinkhorn_solver sinkhorn_unbalanced \
+  --criterion hybrid_clip_tp_loss \
+  --sim_combine_method cross_modality \
+  --hybrid_clip_tp_loss_clip_loss_lambda 0.1

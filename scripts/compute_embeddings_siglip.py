@@ -209,7 +209,11 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--model",
         type=str,
-        choices=["google/siglip-base-patch16-256-multilingual"],
+        choices=[
+            "google/siglip-base-patch16-256-multilingual",
+            "google/siglip2-base-patch16-224",
+            "google/siglip2-base-patch16-256",
+        ],
         help="SigLIP model to use",
         default="google/siglip-base-patch16-256-multilingual",
     )

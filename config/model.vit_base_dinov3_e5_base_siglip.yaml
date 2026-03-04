@@ -1,5 +1,5 @@
 image_config:
-  model_name: timm/convnext_base.dinov3_lvd1689m
+  model_name: timm/vit_base_patch16_dinov3.lvd1689m
   pretrained: true
   pool: avg
   proj: linear # low-resource
@@ -7,8 +7,10 @@ image_config:
   proj_dropout_rate: 0.1
 
 text_config:
-  model_name: google/embeddinggemma-300m
+  model_name: intfloat/multilingual-e5-base
   proj: none
   proj_bias: false
 
 embed_dim: 768
+initial_temperature: 0.06
+logit_bias: -9
