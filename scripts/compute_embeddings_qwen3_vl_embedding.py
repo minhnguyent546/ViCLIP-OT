@@ -163,6 +163,9 @@ def compute_embeddings(args: argparse.Namespace) -> None:
         }
         for _, _, _, caption in samples
     ]
+    _permutation = np.argsort([-len(caption["text"]) for caption in ordered_samples_caption])
+    _inverse_permutation = np.argsort(_permutation)
+    ordered_samples_caption = [ordered_samples_caption[idx] for idx in _permutation]
 
     image_embeddings = None
     caption_embeddings = None
@@ -183,6 +186,8 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                     (caption_embeddings, batch_caption_embeddings),  # pyright: ignore
                     dim=0,
                 )
+        assert caption_embeddings is not None
+        caption_embeddings = torch.stack([caption_embeddings[idx] for idx in _inverse_permutation])
 
         for i in tqdm(
             range(0, len(ordered_samples_image), args.batch_size),
