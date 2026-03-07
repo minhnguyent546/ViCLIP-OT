@@ -76,6 +76,7 @@ def train_model(args: argparse.Namespace) -> None:
         "batch_level_entropic_ot_loss",
         "hybrid_clip_tp_loss",
         "hybrid_sig_lip_tp_loss",
+        "hybrid_clip_tp_distill_loss",
     ):
         if (
             args.precomputed_caption_embeddings_path is None
