@@ -218,10 +218,6 @@ def train_model(args: argparse.Namespace) -> None:
     if args.lock_text:
         model.lock_text_tower(unfreeze_dense=args.lock_text_unfreeze_dense)
 
-    if args.compile_model:
-        logger.info("Compiling the model..")
-        model = torch.compile(model)
-
     # loading dataset
     train_transforms = v2.Compose(
         [
@@ -573,6 +569,10 @@ def train_model(args: argparse.Namespace) -> None:
             raise RuntimeError(
                 f"Invalid warmup lr method '{args.lr_warmup_method}'. Only `linear` and `constant` are supported."
             )
+
+    if args.compile_model:
+        logger.info("Compiling the model..")
+        model = torch.compile(model)
 
     optimizer.zero_grad()
     if args.max_grad_norm > 0:
