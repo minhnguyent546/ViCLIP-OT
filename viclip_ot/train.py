@@ -218,6 +218,9 @@ def train_model(args: argparse.Namespace) -> None:
     if args.lock_text:
         model.lock_text_tower(unfreeze_dense=args.lock_text_unfreeze_dense)
 
+    if args.compile_model:
+        model = torch.compile(model)
+
     # loading dataset
     train_transforms = v2.Compose(
         [

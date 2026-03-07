@@ -113,6 +113,11 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         help="Path to the checkpoint storing the model state",
     )
     group.add_argument(
+        "--compile_model",
+        action="store_true",
+        help="Whether to compile the model with torch.compile",
+    )
+    group.add_argument(
         "--random_weights",
         action="store_true",
         help="Whether to initializing models with random weights instead of initializing with pretrained weights (this option takes no effect when `from_checkpoint` is specified)",
