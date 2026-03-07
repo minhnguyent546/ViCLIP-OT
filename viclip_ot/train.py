@@ -248,7 +248,7 @@ def train_model(args: argparse.Namespace) -> None:
         ]
     )
 
-    def model_fmt() -> Literal["gemma", "e5", "qwen3", "bge", "sbert", "jina_embeddings_v5_text"]:
+    def model_fmt() -> Literal["gemma", "e5", "qwen3", "bge", "sbert", "jina-embeddings-v5-text"]:
         model_name = model_config.text_config.model_name
         if "gemma" in model_name.lower():  # google/embeddinggemma-300m
             return "gemma"
@@ -261,9 +261,9 @@ def train_model(args: argparse.Namespace) -> None:
         elif "sbert" in model_name.lower():  # keepitreal/vietnamese-sbert
             return "sbert"
         elif (
-            "jina_embeddings_v5_text" in model_name.lower()
+            "jina-embeddings-v5-text" in model_name.lower()
         ):  # jinaai/jina-embeddings-v5-text-nano-text-matching
-            return "jina_embeddings_v5_text"
+            return "jina-embeddings-v5-text"
         else:
             raise ValueError(f"Unsupported model name for determining model format: {model_name}")
 
