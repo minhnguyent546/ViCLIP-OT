@@ -692,8 +692,12 @@ def train_model(args: argparse.Namespace) -> None:
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
                     if isinstance(criterion, losses.HybridClipTPDistillLoss):
-                        criterion_kwargs["teacher_image_features"] = image_embeddings[pair_ids]
-                        criterion_kwargs["teacher_text_features"] = caption_embeddings[pair_ids]
+                        criterion_kwargs["teacher_image_features"] = image_embeddings[pair_ids][
+                            : model.config.teacher_embed_dim
+                        ]
+                        criterion_kwargs["teacher_text_features"] = caption_embeddings[pair_ids][
+                            : model.config.teacher_embed_dim
+                        ]
 
                 with autocast_context:
                     model_outputs = model(images, text_inputs)
@@ -772,8 +776,12 @@ def train_model(args: argparse.Namespace) -> None:
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
                     if isinstance(criterion, losses.HybridClipTPDistillLoss):
-                        criterion_kwargs["teacher_image_features"] = image_embeddings[pair_ids]
-                        criterion_kwargs["teacher_text_features"] = caption_embeddings[pair_ids]
+                        criterion_kwargs["teacher_image_features"] = image_embeddings[pair_ids][
+                            : model.config.teacher_embed_dim
+                        ]
+                        criterion_kwargs["teacher_text_features"] = caption_embeddings[pair_ids][
+                            : model.config.teacher_embed_dim
+                        ]
 
                 accum_num_samples = 0
 

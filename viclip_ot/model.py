@@ -507,6 +507,7 @@ class ViCLIPOT(nn.Module):
     def __init__(self, config: ViCLIPOTConfig) -> None:
         super().__init__()
 
+        self.config = config
         self.image_encoder = ImageEncoder(
             config=config.image_config,
             embed_dim=config.embed_dim,
