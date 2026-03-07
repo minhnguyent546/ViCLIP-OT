@@ -195,6 +195,7 @@ class TextEncoder(nn.Module):
         "intfloat/multilingual-e5-base",
         "intfloat/multilingual-e5-large",
         "keepitreal/vietnamese-sbert",
+        "jinaai/jina-embeddings-v5-text-nano-text-matching",
     ]
 
     def __init__(
@@ -231,16 +232,14 @@ class TextEncoder(nn.Module):
         # TODO: this is a messy way, infer from modules.json should be better
         if self.config.model_name == "google/embeddinggemma-300m":
             self._add_dense_for_embeddinggemma_300m()
-        elif self.config.model_name == "baai/bge-m3":
-            self.dense = nn.Identity()  # no extra layers needed
-        elif self.config.model_name == "qwen/qwen3-embedding-0.6b":
-            self.dense = nn.Identity()  # no extra layers needed
         elif self.config.model_name in (
+            "baai/bge-m3",
+            "qwen/qwen3-embedding-0.6b",
             "intfloat/multilingual-e5-base",
             "intfloat/multilingual-e5-large",
+            "keepitreal/vietnamese-sbert",
+            "jinaai/jina-embeddings-v5-text-nano-text-matching",
         ):
-            self.dense = nn.Identity()  # no extra layers needed
-        elif self.config.model_name == "keepitreal/vietnamese-sbert":
             self.dense = nn.Identity()  # no extra layers needed
         else:
             raise NotImplementedError(
@@ -353,9 +352,12 @@ class TextEncoder(nn.Module):
         return nn.Sequential(lin, activation_fun)
 
     def _last_token_pool(self, last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
-        if self.config.model_name != "qwen/qwen3-embedding-0.6b":
+        if self.config.model_name not in (
+            "qwen/qwen3-embedding-0.6b",
+            "jinaai/jina-embeddings-v5-text-nano-text-matching",
+        ):
             raise ValueError(
-                "_last_token_pool is only supported for 'qwen/qwen3-embedding-0.6b' model."
+                "_last_token_pool is only supported for 'qwen/qwen3-embedding-0.6b' and 'jinaai/jina-embeddings-v5-text-nano-text-matching' models."
             )
 
         left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
@@ -390,18 +392,6 @@ class TextEncoder(nn.Module):
                     param.requires_grad = False
 
     def get_embeddings(self, inputs: dict[str, Tensor], *, normalize: bool = False) -> Tensor:
-        assert self.config.model_name in (
-            "google/embeddinggemma-300m",
-            "baai/bge-m3",
-            "qwen/qwen3-embedding-0.6b",
-            "intfloat/multilingual-e5-base",
-            "intfloat/multilingual-e5-large",
-            "keepitreal/vietnamese-sbert",
-        ), (
-            "get_embeddings currently only supports 'google/embeddinggemma-300m', 'baai/bge-m3', 'qwen/qwen3-embedding-0.6b', "
-            "'intfloat/multilingual-e5-base', 'intfloat/multilingual-e5-large', and 'keepitreal/vietnamese-sbert' models."
-        )
-
         # forward Pass
         outputs = self.encoder(**inputs)
 
@@ -438,7 +428,10 @@ class TextEncoder(nn.Module):
 
             return last_hidden_state
 
-        if self.config.model_name == "qwen/qwen3-embedding-0.6b":
+        if self.config.model_name in (
+            "qwen/qwen3-embedding-0.6b",
+            "jinaai/jina-embeddings-v5-text-nano-text-matching",
+        ):
             # use last token pooling
             last_hidden_state = self._last_token_pool(
                 last_hidden_states=last_hidden_state,

@@ -66,8 +66,8 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
         self,
         root_dir: str,
         metadata_json_file: str,
+        model_fmt: Literal["gemma", "e5", "qwen3", "bge", "sbert", "jina_embeddings_v5_text"],
         image_transforms=None,
-        model_fmt: Literal["gemma", "e5", "qwen3", "bge", "sbert"] = "gemma",
     ) -> None:
         self.root_dir = root_dir
         self.metadata_file_path = os.path.join(self.root_dir, metadata_json_file)
@@ -177,11 +177,13 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
             # https://www.sbert.net/docs/usage/semantic_textual_similarity.html
             # SBERT does not require special formatting
             formatted_captions = [f"{caption}" for caption in captions]
-
+        elif self.model_fmt == "jina_embeddings_v5_text":
+            # https://huggingface.co/jinaai/jina-embeddings-v5-text-nano/blob/main/modeling_jina_embeddings_v5.py
+            formatted_captions = [f"Document: {caption}" for caption in captions]
         else:
             raise ValueError(
                 f"Invalid model_fmt: {self.model_fmt}. "
-                f"Expected one of ['gemma', 'e5', 'qwen3', 'bge', 'sbert']"
+                f"Expected one of ['gemma', 'e5', 'qwen3', 'bge', 'sbert', 'jina_embeddings_v5_text']"
             )
 
         return image, formatted_captions, int(image_id), idx
