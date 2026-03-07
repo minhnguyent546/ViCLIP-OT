@@ -454,6 +454,7 @@ def train_model(args: argparse.Namespace) -> None:
         "image_encoder.head.",
         "logit_scale",
         "logit_bias",
+        "embed_proj",
     )
 
     def has_prefix(name: str, prefixes: tuple[str, ...]) -> bool:
