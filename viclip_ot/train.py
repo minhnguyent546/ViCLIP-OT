@@ -219,6 +219,7 @@ def train_model(args: argparse.Namespace) -> None:
         model.lock_text_tower(unfreeze_dense=args.lock_text_unfreeze_dense)
 
     if args.compile_model:
+        logger.info("Compiling the model..")
         model = torch.compile(model)
 
     # loading dataset
