@@ -137,6 +137,7 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
             "batch_level_entropic_ot_loss",
             "hybrid_clip_tp_loss",
             "hybrid_sig_lip_tp_loss",
+            "hybrid_clip_tp_distill_loss",
         ],
         default="clip_loss",
     )
@@ -218,6 +219,18 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default=0.1,
     )
 
+    group.add_argument(
+        "--hybrid_clip_tp_distill_loss_clip_loss_lambda",
+        type=float,
+        help="Lambda weight for CLIP loss in hybrid CLIP and TP distillation loss (loss = lambda * CLIP_loss + OT_loss + embedding_distillation_lambda * embedding_distillation_loss)",
+        default=0.1,
+    )
+    group.add_argument(
+        "--hybrid_clip_tp_distill_loss_embedding_distillation_lambda",
+        type=float,
+        help="Lambda weight for embedding distillation loss in hybrid CLIP and TP distillation loss (loss = lambda * CLIP_loss + OT_loss + embedding_distillation_lambda * embedding_distillation_loss)",
+        default=2,
+    )
     group.add_argument(
         "--num_epochs",
         type=int,

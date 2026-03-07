@@ -428,6 +428,55 @@ class BatchLevelEntropicOTLoss(nn.Module):
         return {"loss": total_loss} if output_dict else total_loss
 
 
+class EmbeddingDistillationLoss(nn.Module):
+    """
+    Embedding Distillation Loss
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        teacher_image_features: Tensor,
+        teacher_text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+        output_dict: bool = False,
+        reduction: str = "mean",
+        **kwargs,
+    ):
+        """
+        Compute the embedding distillation loss as the sum of cosine distances
+        between (projected) student and teacher embeddings for both modalities.
+        """
+
+        image_cosine_dist = 1 - Fun.cosine_similarity(
+            image_features.float(), teacher_image_features.float(), dim=-1
+        )
+        text_cosine_dist = 1 - Fun.cosine_similarity(
+            text_features.float(), teacher_text_features.float(), dim=-1
+        )
+
+        # sum over modalities {x, y} for each sample
+        loss = 0.5 * (image_cosine_dist + text_cosine_dist)
+
+        if reduction == "mean":
+            loss = loss.mean()
+        elif reduction == "sum":
+            loss = loss.sum()
+        elif reduction == "none":
+            pass
+        else:
+            raise ValueError(
+                f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
+            )
+
+        return {"loss": loss} if output_dict else loss
+
+
 class HybridClipTPLoss(nn.Module):
     """
     Combines CLIP loss with Batch-level Entropic Optimal Transport Loss.
@@ -556,5 +605,92 @@ class HybridSigLipTPLoss(nn.Module):
             reduction=reduction,
         )
         total_loss = self.sig_lip_loss_lambda * sig_lip_loss_value + ot_loss_value
+
+        return {"loss": total_loss} if output_dict else total_loss
+
+
+class HybridClipTPDistillLoss(nn.Module):
+    """
+    Combines CLIP loss with Batch-level Entropic Optimal Transport Loss and embedding distillation loss.
+    """
+
+    def __init__(
+        self,
+        clip_loss_lambda: float = 0.1,
+        embedding_distillation_lambda: float = 1,
+        sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
+        use_transport_plan_as_logits: bool = False,
+    ):
+        """
+        In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,
+        the transport plan will be used as logits for computing the cross-entropy loss,
+        otherwise, use transport plan as soft labels.
+
+        If `sim_matrix` is provided in the forward pass, `use_transport_plan_as_logits` takes no effect.
+        """
+
+        super().__init__()
+
+        self.clip_loss_lambda = clip_loss_lambda
+        self.use_transport_plan_as_logits = use_transport_plan_as_logits
+        self.embedding_distillation_lambda = embedding_distillation_lambda
+
+        self.clip_loss = ClipLoss()
+        self.ot_loss = BatchLevelEntropicOTLoss(
+            sinkhorn_solver=sinkhorn_solver,
+            use_transport_plan_as_logits=self.use_transport_plan_as_logits,
+        )
+        self.embedding_distillation_loss = EmbeddingDistillationLoss()
+
+    def forward(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        projected_image_features: Tensor,
+        projected_text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+        image_ids: Tensor | None = None,
+        sim_matrix: Tensor | None = None,
+        output_dict: bool = False,
+        reduction: str = "mean",
+    ):
+        clip_loss_value = self.clip_loss(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            logit_bias=logit_bias,
+            image_ids=image_ids,
+            output_dict=False,
+            reduction=reduction,
+        )
+
+        ot_loss_value = self.ot_loss(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            logit_bias=logit_bias,
+            output_dict=False,
+            sim_matrix=sim_matrix,
+            image_ids=image_ids,
+            reduction=reduction,
+        )
+
+        embedding_distillation_loss_value = self.embedding_distillation_loss(
+            image_features=projected_image_features,
+            text_features=projected_text_features,
+            teacher_image_features=image_features,
+            teacher_text_features=text_features,
+            logit_scale=logit_scale,
+            logit_bias=logit_bias,
+            output_dict=False,
+            reduction=reduction,
+        )
+
+        total_loss = (
+            self.clip_loss_lambda * clip_loss_value
+            + ot_loss_value
+            + self.embedding_distillation_lambda * embedding_distillation_loss_value
+        )
 
         return {"loss": total_loss} if output_dict else total_loss

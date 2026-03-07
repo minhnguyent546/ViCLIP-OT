@@ -59,6 +59,10 @@ class ViCLIPOTConfig(BaseModel):
     initial_temperature: float = 0.07
     logit_bias: float | None = None
 
+    teacher_embed_dim: int | None = (
+        None  # if set, this is equal to the embedding dimension of the teacher model for distillation and assumed we are using embedding distillation loss
+    )
+
 
 class ImageEncoder(nn.Module):
     _SUPPORTED_MODELS = [
@@ -515,6 +519,11 @@ class ViCLIPOT(nn.Module):
         if config.logit_bias is not None:
             self.logit_bias = nn.Parameter(torch.tensor(config.logit_bias, dtype=torch.float32))
 
+        self.embed_proj = None
+        if config.teacher_embed_dim is not None and config.teacher_embed_dim != config.embed_dim:
+            self.embed_proj = nn.Linear(config.embed_dim, config.teacher_embed_dim, bias=False)
+            nn.init.xavier_uniform_(self.embed_proj.weight)
+
     def lock_image_tower(self, last_unfreeze_groups: int = 0, freeze_bn_stats: bool = False):
         # lock image tower as per LiT - https://arxiv.org/abs/2111.07991
         self.image_encoder.freeze(
@@ -537,14 +546,23 @@ class ViCLIPOT(nn.Module):
         return features
 
     def forward(self, images: Tensor, text_inputs):
-        image_features = self.encode_image(images, normalize=True)
-        text_features = self.encode_text(text_inputs, normalize=True)
+        image_features = self.encode_image(images, normalize=False)
+        text_features = self.encode_text(text_inputs, normalize=False)
+
+        if self.embed_proj is not None:
+            projected_image_features = Fun.normalize(self.embed_proj(image_features), p=2, dim=-1)
+            projected_text_features = Fun.normalize(self.embed_proj(text_features), p=2, dim=-1)
+
+        image_features = Fun.normalize(image_features, p=2, dim=-1)
+        text_features = Fun.normalize(text_features, p=2, dim=-1)
 
         self.logit_scale.data.clamp_(min=np.log(1 / 100), max=np.log(100))
 
         output_dict = {
             "image_features": image_features,
             "text_features": text_features,
+            "projected_image_features": projected_image_features,
+            "projected_text_features": projected_text_features,
             "logit_scale": self.logit_scale.exp(),
         }
         if self.logit_bias is not None:
