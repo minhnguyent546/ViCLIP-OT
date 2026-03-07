@@ -247,6 +247,8 @@ def eval_model(
                     logit_bias=model_outputs.get("logit_bias", None),
                     image_ids=image_ids,
                 )
+                if isinstance(loss, dict):
+                    loss = sum(loss.values())
 
             all_image_features.append(image_features.cpu())
             all_text_features.append(text_features.cpu())

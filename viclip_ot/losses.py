@@ -617,7 +617,8 @@ class HybridClipTPDistillLoss(nn.Module):
     def __init__(
         self,
         clip_loss_lambda: float = 0.1,
-        embedding_distillation_lambda: float = 1,
+        ot_loss_lambda: float = 1.0,
+        embedding_distillation_lambda: float = 2.0,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
         use_transport_plan_as_logits: bool = False,
     ):
@@ -632,8 +633,9 @@ class HybridClipTPDistillLoss(nn.Module):
         super().__init__()
 
         self.clip_loss_lambda = clip_loss_lambda
-        self.use_transport_plan_as_logits = use_transport_plan_as_logits
+        self.ot_loss_lambda = ot_loss_lambda
         self.embedding_distillation_lambda = embedding_distillation_lambda
+        self.use_transport_plan_as_logits = use_transport_plan_as_logits
 
         self.clip_loss = ClipLoss()
         self.ot_loss = BatchLevelEntropicOTLoss(
@@ -654,45 +656,53 @@ class HybridClipTPDistillLoss(nn.Module):
         logit_bias: Tensor | None = None,
         image_ids: Tensor | None = None,
         sim_matrix: Tensor | None = None,
-        output_dict: bool = False,
         reduction: str = "mean",
+        **kwargs,
     ):
-        clip_loss_value = self.clip_loss(
-            image_features=image_features,
-            text_features=text_features,
-            logit_scale=logit_scale,
-            logit_bias=logit_bias,
-            image_ids=image_ids,
-            output_dict=False,
-            reduction=reduction,
-        )
+        if self.clip_loss_lambda > 0:
+            clip_loss_value = self.clip_loss(
+                image_features=image_features,
+                text_features=text_features,
+                logit_scale=logit_scale,
+                logit_bias=logit_bias,
+                image_ids=image_ids,
+                output_dict=False,
+                reduction=reduction,
+            )
+        else:
+            clip_loss_value = 0
 
-        ot_loss_value = self.ot_loss(
-            image_features=image_features,
-            text_features=text_features,
-            logit_scale=logit_scale,
-            logit_bias=logit_bias,
-            output_dict=False,
-            sim_matrix=sim_matrix,
-            image_ids=image_ids,
-            reduction=reduction,
-        )
+        if self.ot_loss_lambda > 0:
+            ot_loss_value = self.ot_loss(
+                image_features=image_features,
+                text_features=text_features,
+                logit_scale=logit_scale,
+                logit_bias=logit_bias,
+                output_dict=False,
+                sim_matrix=sim_matrix,
+                image_ids=image_ids,
+                reduction=reduction,
+            )
+        else:
+            ot_loss_value = 0
 
-        embedding_distillation_loss_value = self.embedding_distillation_loss(
-            projected_image_features=projected_image_features,
-            projected_text_features=projected_text_features,
-            teacher_image_features=teacher_image_features,
-            teacher_text_features=teacher_text_features,
-            logit_scale=logit_scale,
-            logit_bias=logit_bias,
-            output_dict=False,
-            reduction=reduction,
-        )
+        if self.embedding_distillation_lambda > 0:
+            embedding_distillation_loss_value = self.embedding_distillation_loss(
+                projected_image_features=projected_image_features,
+                projected_text_features=projected_text_features,
+                teacher_image_features=teacher_image_features,
+                teacher_text_features=teacher_text_features,
+                logit_scale=logit_scale,
+                logit_bias=logit_bias,
+                output_dict=False,
+                reduction=reduction,
+            )
+        else:
+            embedding_distillation_loss_value = 0
 
-        total_loss = (
-            self.clip_loss_lambda * clip_loss_value
-            + ot_loss_value
-            + self.embedding_distillation_lambda * embedding_distillation_loss_value
-        )
-
-        return {"loss": total_loss} if output_dict else total_loss
+        return {
+            "clip_loss": self.clip_loss_lambda * clip_loss_value,
+            "ot_loss": self.ot_loss_lambda * ot_loss_value,
+            "embedding_distillation_loss": self.embedding_distillation_lambda
+            * embedding_distillation_loss_value,
+        }

@@ -201,6 +201,7 @@ def train_model(args: argparse.Namespace) -> None:
     elif args.criterion == "hybrid_clip_tp_distill_loss":
         criterion = losses.HybridClipTPDistillLoss(
             clip_loss_lambda=args.hybrid_clip_tp_distill_loss_clip_loss_lambda,
+            ot_loss_lambda=args.hybrid_clip_tp_distill_loss_ot_loss_lambda,
             embedding_distillation_lambda=args.hybrid_clip_tp_distill_loss_embedding_distillation_lambda,
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
@@ -707,6 +708,9 @@ def train_model(args: argparse.Namespace) -> None:
                         reduction="sum",
                         **criterion_kwargs,
                     )
+                    if isinstance(loss, dict):
+                        loss = sum(loss.values())
+
                     if num_items_in_batch > 0:
                         loss = loss / num_items_in_batch
 
@@ -806,6 +810,9 @@ def train_model(args: argparse.Namespace) -> None:
                             reduction="sum",
                             **criterion_kwargs,
                         )
+                        if isinstance(loss, dict):
+                            loss = sum(loss.values())
+
                         del outputs_for_loss
                         del outputs_no_cached
 
