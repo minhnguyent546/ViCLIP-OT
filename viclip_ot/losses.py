@@ -438,8 +438,8 @@ class EmbeddingDistillationLoss(nn.Module):
 
     def forward(
         self,
-        image_features: Tensor,
-        text_features: Tensor,
+        projected_image_features: Tensor,
+        projected_text_features: Tensor,
         teacher_image_features: Tensor,
         teacher_text_features: Tensor,
         logit_scale: Tensor,
@@ -454,10 +454,10 @@ class EmbeddingDistillationLoss(nn.Module):
         """
 
         image_cosine_dist = 1 - Fun.cosine_similarity(
-            image_features.float(), teacher_image_features.float(), dim=-1
+            projected_image_features.float(), teacher_image_features.float(), dim=-1
         )
         text_cosine_dist = 1 - Fun.cosine_similarity(
-            text_features.float(), teacher_text_features.float(), dim=-1
+            projected_text_features.float(), teacher_text_features.float(), dim=-1
         )
 
         # sum over modalities {x, y} for each sample
@@ -648,6 +648,8 @@ class HybridClipTPDistillLoss(nn.Module):
         text_features: Tensor,
         projected_image_features: Tensor,
         projected_text_features: Tensor,
+        teacher_image_features: Tensor,
+        teacher_text_features: Tensor,
         logit_scale: Tensor,
         logit_bias: Tensor | None = None,
         image_ids: Tensor | None = None,
@@ -677,10 +679,10 @@ class HybridClipTPDistillLoss(nn.Module):
         )
 
         embedding_distillation_loss_value = self.embedding_distillation_loss(
-            image_features=projected_image_features,
-            text_features=projected_text_features,
-            teacher_image_features=image_features,
-            teacher_text_features=text_features,
+            projected_image_features=projected_image_features,
+            projected_text_features=projected_text_features,
+            teacher_image_features=teacher_image_features,
+            teacher_text_features=teacher_text_features,
             logit_scale=logit_scale,
             logit_bias=logit_bias,
             output_dict=False,
