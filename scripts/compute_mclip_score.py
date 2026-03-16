@@ -35,7 +35,7 @@ def compute_mclip_score(args: argparse.Namespace) -> None:
     os.makedirs(score_dir, exist_ok=True)
 
     missing_image_row = 0
-    for shard_file in shard_files:
+    for shard_idx, shard_file in enumerate(shard_files):
         shard_name = os.path.splitext(shard_file)[0]
         logger.info(f"Processing shard file: {shard_file}")
         df = pd.read_parquet(os.path.join(args.shards_dir, shard_file))
@@ -153,7 +153,7 @@ def compute_mclip_score(args: argparse.Namespace) -> None:
         )
         score_df = pd.concat([score_df, shard_score_df], ignore_index=True)
 
-        if len(score_df) >= args.shard_size:
+        if len(score_df) >= args.shard_size or shard_idx == len(shard_files) - 1:
             score_file = os.path.join(score_dir, f"{shard_name}_scores.parquet")
             score_df.to_parquet(score_file, index=False)
             logger.info(f"Saved scores for {len(score_df)} records to {score_file}")
