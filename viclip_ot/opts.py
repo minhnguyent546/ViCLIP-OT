@@ -141,6 +141,12 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         help="Whether to use the transport plan as logits for computing cross-entropy loss in batch-level entropic OT loss, otherwise the transport plan is used as soft targets. Note that these two cases will only happen when `--sim_graph_regularized_ot` is not set.",
     )
     group.add_argument(
+        "--sim_matrix_temperature",
+        type=float,
+        help="Temperature for scaling the similarity matrix when computing OT losses",
+        default=0.05,
+    )
+    group.add_argument(
         "--sinkhorn_solver",
         type=str,
         help="Sinkhorn solver to use for OT losses",

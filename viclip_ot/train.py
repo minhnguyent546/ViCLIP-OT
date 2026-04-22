@@ -184,18 +184,21 @@ def train_model(args: argparse.Namespace) -> None:
         criterion = losses.BatchLevelEntropicOTLoss(
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
+            sim_matrix_temperature=args.sim_matrix_temperature,
         )
     elif args.criterion == "hybrid_clip_tp_loss":
         criterion = losses.HybridClipTPLoss(
             clip_loss_lambda=args.hybrid_clip_tp_loss_clip_loss_lambda,
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
+            sim_matrix_temperature=args.sim_matrix_temperature,
         )
     elif args.criterion == "hybrid_sig_lip_tp_loss":
         criterion = losses.HybridSigLipTPLoss(
             sig_lip_loss_lambda=args.hybrid_sig_lip_tp_loss_sig_lip_loss_lambda,
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
+            sim_matrix_temperature=args.sim_matrix_temperature,
         )
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
