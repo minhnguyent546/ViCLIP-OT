@@ -230,7 +230,7 @@ def compute_embeddings(args: argparse.Namespace) -> None:
         for i in range(0, len(caption_inputs), args.batch_size_text):
             batch_caption_inputs = caption_inputs[i : i + args.batch_size_text]
             logger.info(
-                f"Processing text batch {i // args.batch_size_text + 1}/{(len(caption_inputs) + args.batch_size_text - 1) // args.batch_size}..."
+                f"Processing text batch {i // args.batch_size_text + 1}/{(len(caption_inputs) + args.batch_size_text - 1) // args.batch_size_text}..."
             )
 
             vllm_batch_caption_inputs = [
@@ -253,7 +253,7 @@ def compute_embeddings(args: argparse.Namespace) -> None:
         for i in range(0, len(image_inputs), args.batch_size_image):
             batch_image_inputs = image_inputs[i : i + args.batch_size_image]
             logger.info(
-                f"Processing image batch {i // args.batch_size_image + 1}/{(len(image_inputs) + args.batch_size_image - 1) // args.batch_size}..."
+                f"Processing image batch {i // args.batch_size_image + 1}/{(len(image_inputs) + args.batch_size_image - 1) // args.batch_size_image}..."
             )
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.num_workers) as executor:
