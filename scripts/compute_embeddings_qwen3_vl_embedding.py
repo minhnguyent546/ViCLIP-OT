@@ -223,24 +223,52 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 torch.tensor(caption_counts, device=image_embeddings.device), dim=0
             )
     else:
-        vllm_caption_inputs = [
-            prepare_vllm_inputs(caption_input, model) for caption_input in caption_inputs
-        ]
-        vllm_image_inputs = [
-            prepare_vllm_inputs(image_input, model) for image_input in image_inputs
-        ]
+        caption_embeddings = None
+        image_embeddings = None
+        for i in range(0, len(caption_inputs), args.batch_size):
+            batch_caption_inputs = caption_inputs[i : i + args.batch_size]
+            logger.info(
+                f"Processing text batch {i // args.batch_size + 1}/{(len(caption_inputs) + args.batch_size - 1) // args.batch_size}..."
+            )
 
-        # embed captions
-        caption_outputs = model.embed(vllm_caption_inputs)  # pyright: ignore
-        caption_embeddings = torch.tensor(
-            [output.outputs.embedding for output in caption_outputs]  # type: ignore
-        )
+            vllm_batch_caption_inputs = [
+                prepare_vllm_inputs(caption_input, model) for caption_input in batch_caption_inputs
+            ]
+            batch_caption_outputs = model.embed(vllm_batch_caption_inputs)  # pyright: ignore
+            batch_caption_embeddings = torch.tensor(
+                [output.outputs.embedding for output in batch_caption_outputs]
+            )
 
-        # embed images
-        image_outputs = model.embed(vllm_image_inputs)  # pyright: ignore
-        image_embeddings = torch.tensor(
-            [output.outputs.embedding for output in image_outputs]  # type: ignore
-        )
+            if caption_embeddings is None:
+                caption_embeddings = batch_caption_embeddings
+            else:
+                caption_embeddings = torch.cat(
+                    (caption_embeddings, batch_caption_embeddings),  # pyright: ignore
+                    dim=0,
+                )
+
+        for i in range(0, len(image_inputs), args.batch_size):
+            batch_image_inputs = image_inputs[i : i + args.batch_size]
+            logger.info(
+                f"Processing image batch {i // args.batch_size + 1}/{(len(image_inputs) + args.batch_size - 1) // args.batch_size}..."
+            )
+
+            vllm_batch_image_inputs = [
+                prepare_vllm_inputs(image_input, model) for image_input in batch_image_inputs
+            ]
+            batch_image_outputs = model.embed(vllm_batch_image_inputs)  # pyright: ignore
+            batch_image_embeddings = torch.tensor(
+                [output.outputs.embedding for output in batch_image_outputs]
+            )
+
+            if image_embeddings is None:
+                image_embeddings = batch_image_embeddings
+            else:
+                image_embeddings = torch.cat(
+                    (image_embeddings, batch_image_embeddings),  # pyright: ignore
+                    dim=0,
+                )
+
         image_embeddings = image_embeddings.repeat_interleave(
             torch.tensor(caption_counts, device=image_embeddings.device), dim=0
         )
