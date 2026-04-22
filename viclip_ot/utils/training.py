@@ -518,18 +518,10 @@ def print_eval_results(
 
     print_str = (
         f"{print_prefix}"
-        f"{prefix}_loss {eval_results['loss']:0.4f} | "
-        f"{prefix}_i2t_mean_rank {eval_results['i2t_mean_rank']:0.4f} | "
-        f"{prefix}_i2t_median_rank {eval_results['i2t_median_rank']:0.4f} | "
-        f"{prefix}_i2t_R@1 {eval_results['i2t_R__1']:0.4f} | "
-        f"{prefix}_i2t_R@5 {eval_results['i2t_R__5']:0.4f} | "
-        f"{prefix}_i2t_R@10 {eval_results['i2t_R__10']:0.4f} | "
-        f"{prefix}_t2i_mean_rank {eval_results['t2i_mean_rank']:0.4f} | "
-        f"{prefix}_t2i_median_rank {eval_results['t2i_median_rank']:0.4f} | "
-        f"{prefix}_t2i_R@1 {eval_results['t2i_R__1']:0.4f} | "
-        f"{prefix}_t2i_R@5 {eval_results['t2i_R__5']:0.4f} | "
-        f"{prefix}_t2i_R@10 {eval_results['t2i_R__10']:0.4f} | "
-        f"{prefix}_alignment_score {eval_results['alignment_score']:0.4f} | "
+        f"{prefix}_loss: {eval_results['loss']:0.4f} | "
+        f"{prefix}_i2t_r@{{1,5,10}}: {eval_results['i2t_R__1']:0.4f} / {eval_results['i2t_R__5']:0.4f} / {eval_results['i2t_R__10']:0.4f} | "
+        f"{prefix}_t2i_r@{{1,5,10}}: {eval_results['t2i_R__1']:0.4f} / {eval_results['t2i_R__5']:0.4f} / {eval_results['t2i_R__10']:0.4f} | "
+        f"{prefix}_align_score {eval_results['alignment_score']:0.4f} | "
         f"{prefix}_modality_gap {eval_results['modality_gap']:0.4f}"
     )
     print(print_str)
