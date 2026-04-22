@@ -221,6 +221,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         self,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn_unbalanced",
         use_transport_plan_as_logits: bool = False,
+        sim_matrix_temperature: float = 0.05,
     ):
         """
         In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,
@@ -233,6 +234,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         super().__init__()
         self.sinkhorn_solver = sinkhorn_solver
         self.use_transport_plan_as_logits = use_transport_plan_as_logits
+        self.sim_matrix_scale_factor = 1 / sim_matrix_temperature
 
         print(f"Using Sinkhorn Solver: {self.sinkhorn_solver}")
 
@@ -357,8 +359,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         if sim_matrix is not None:
             #  Generalized KL Divergence (transport_plan || sim_matrix)
             # NOTE: note that this is reverse KL divergence
-            # TODO: find a better way to scale sim_matrix for stable training other than using `logit_scale`
-            sim_matrix = (logit_scale * sim_matrix).softmax(dim=1)
+            sim_matrix = (self.sim_matrix_scale_factor * sim_matrix).softmax(dim=1)
             loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
             loss_t2i = (
                 transport_plan.t() * (transport_plan.t().log() - sim_matrix.t().log() - 1)
@@ -438,6 +439,7 @@ class HybridClipTPLoss(nn.Module):
         clip_loss_lambda: float = 0.1,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
         use_transport_plan_as_logits: bool = False,
+        sim_matrix_temperature: float = 0.05,
     ):
         """
         In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,
@@ -456,6 +458,7 @@ class HybridClipTPLoss(nn.Module):
         self.ot_loss = BatchLevelEntropicOTLoss(
             sinkhorn_solver=sinkhorn_solver,
             use_transport_plan_as_logits=self.use_transport_plan_as_logits,
+            sim_matrix_temperature=sim_matrix_temperature,
         )
 
     def forward(
@@ -504,6 +507,7 @@ class HybridSigLipTPLoss(nn.Module):
         sig_lip_loss_lambda: float = 0.1,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
         use_transport_plan_as_logits: bool = False,
+        sim_matrix_temperature: float = 0.05,
     ):
         """
         In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,
@@ -522,6 +526,7 @@ class HybridSigLipTPLoss(nn.Module):
         self.ot_loss = BatchLevelEntropicOTLoss(
             sinkhorn_solver=sinkhorn_solver,
             use_transport_plan_as_logits=self.use_transport_plan_as_logits,
+            sim_matrix_temperature=sim_matrix_temperature,
         )
 
     def forward(
