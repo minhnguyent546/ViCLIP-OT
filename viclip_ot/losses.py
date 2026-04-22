@@ -7,6 +7,85 @@ import torch.nn as nn
 import torch.nn.functional as Fun
 from torch import Tensor
 
+from viclip_ot.utils.logger import logger
+
+
+def sinkhorn(
+    metric_cost_matrix: Tensor,
+    reg: float = 0.05,  # try with [0.01, 0.1] with normalized cost matrix
+    max_num_iters: int = 200,
+) -> Tensor:
+    """Solve the unbalanced entropic regularization optimal transport problem and return the OT plan."""
+    device = metric_cost_matrix.device
+    batch_size = metric_cost_matrix.shape[0]
+    a = torch.ones((batch_size,), device=device) / batch_size
+    b = torch.ones((batch_size,), device=device) / batch_size
+
+    transport_plan = ot.sinkhorn(
+        a=a,
+        b=b,
+        M=metric_cost_matrix,
+        reg=reg,
+        method="sinkhorn_log",
+        numItermax=max_num_iters,
+    )
+
+    # scale with batch_size as we initialize `a` and `b` with equal weight `1 / N` for each image (and text)
+    return transport_plan * batch_size  # pyright: ignore[reportReturnType]
+
+
+def sinkhorn_unbalanced(
+    metric_cost_matrix,
+    reg: float = 0.05,  # try with [0.01, 0.1] with normalized cost matrix
+    reg_m: float = 0.5,  # try with [0.3, 0.8] with normalized cost matrix
+    max_num_iters: int = 200,
+):
+    device = metric_cost_matrix.device
+    batch_size = metric_cost_matrix.shape[0]
+
+    a = torch.ones(batch_size, device=device) / batch_size
+    b = torch.ones(batch_size, device=device) / batch_size
+
+    # This solves the transport where rows/cols don't have to sum exactly to 1/N
+    transport_plan = ot.sinkhorn_unbalanced(
+        a,
+        b,
+        metric_cost_matrix,
+        reg=reg,
+        reg_m=reg_m,
+        reg_type="kl",
+        method="sinkhorn_stabilized",
+        numItermax=max_num_iters,
+    )
+
+    # scale with batch_size as we initialize `a` and `b` with equal weight `1 / N` for each image (and text)
+    return transport_plan * batch_size  # pyright: ignore[reportReturnType]
+
+
+def compute_logits(
+    image_features: Tensor,
+    text_features: Tensor,
+    logit_scale: Tensor | None = None,
+    logit_bias: Tensor | None = None,
+) -> tuple[Tensor, Tensor]:
+    """Compute scaled cosine similarity logits for image-text pairs.
+
+    Computes in float32 for numerical stability with mixed precision training,
+    then casts back to the original dtype.
+    """
+    original_dtype = image_features.dtype
+    logits_per_image = image_features.float() @ text_features.float().t()
+    if logit_scale is not None:
+        logits_per_image = logit_scale * logits_per_image
+
+    logits_per_text = logits_per_image.t()
+
+    if logit_bias is not None:
+        logits_per_image = logits_per_image + logit_bias
+        logits_per_text = logits_per_text + logit_bias
+
+    return logits_per_image.to(original_dtype), logits_per_text.to(original_dtype)
+
 
 class ClipLoss(nn.Module):
     """(Open) CLIP loss.
@@ -20,25 +99,6 @@ class ClipLoss(nn.Module):
 
     def __init__(self):
         super().__init__()
-
-    def get_logits(
-        self,
-        image_features: Tensor,
-        text_features: Tensor,
-        logit_scale: Tensor,
-        logit_bias: Tensor | None = None,
-    ):
-        # Compute matrix multiplication in float32 for numerical stability
-        # with mixed precision training, then cast back to original dtype
-        original_dtype = image_features.dtype
-        logits_per_image = logit_scale * (image_features.float() @ text_features.float().T)
-        logits_per_text = logits_per_image.T
-
-        if logit_bias is not None:
-            logits_per_image = logits_per_image + logit_bias
-            logits_per_text = logits_per_text + logit_bias
-
-        return logits_per_image.to(original_dtype), logits_per_text.to(original_dtype)
 
     def forward(
         self,
@@ -55,10 +115,10 @@ class ClipLoss(nn.Module):
         If `image_ids` is provided, the computation will take into account image with multiple captions.
         """
         device = image_features.device
-        logits_per_image, logits_per_text = self.get_logits(
+        logits_per_image, logits_per_text = compute_logits(
             image_features,
             text_features,
-            logit_scale,
+            logit_scale=logit_scale,
             logit_bias=logit_bias,
         )
 
@@ -236,7 +296,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         self.use_transport_plan_as_logits = use_transport_plan_as_logits
         self.sim_matrix_scale_factor = 1 / sim_matrix_temperature
 
-        print(f"Using Sinkhorn Solver: {self.sinkhorn_solver}")
+        logger.debug(f"Using Sinkhorn Solver: {self.sinkhorn_solver}")
 
     def get_logits(
         self,
@@ -256,58 +316,6 @@ class BatchLevelEntropicOTLoss(nn.Module):
             logits_per_text = logits_per_text + logit_bias
 
         return logits_per_image.to(original_dtype), logits_per_text.to(original_dtype)
-
-    def sinkhorn(
-        self,
-        metric_cost_matrix: Tensor,
-        reg: float = 0.05,  # try with [0.01, 0.1] with normalized cost matrix
-        max_num_iters: int = 200,
-    ) -> Tensor:
-        """Solve the unbalanced entropic regularization optimal transport problem and return the OT plan."""
-        device = metric_cost_matrix.device
-        batch_size = metric_cost_matrix.shape[0]
-        a = torch.ones((batch_size,), device=device) / batch_size
-        b = torch.ones((batch_size,), device=device) / batch_size
-
-        transport_plan = ot.sinkhorn(
-            a=a,
-            b=b,
-            M=metric_cost_matrix,
-            reg=reg,
-            method="sinkhorn_log",
-            numItermax=max_num_iters,
-        )
-
-        # scale with batch_size as we initialize `a` and `b` with equal weight `1 / N` for each image (and text)
-        return transport_plan * batch_size  # pyright: ignore[reportReturnType]
-
-    def sinkhorn_unbalanced(
-        self,
-        metric_cost_matrix,
-        reg: float = 0.05,  # try with [0.01, 0.1] with normalized cost matrix
-        reg_m: float = 0.5,  # try with [0.3, 0.8] with normalized cost matrix
-        max_num_iters: int = 200,
-    ):
-        device = metric_cost_matrix.device
-        batch_size = metric_cost_matrix.shape[0]
-
-        a = torch.ones(batch_size, device=device) / batch_size
-        b = torch.ones(batch_size, device=device) / batch_size
-
-        # This solves the transport where rows/cols don't have to sum exactly to 1/N
-        transport_plan = ot.sinkhorn_unbalanced(
-            a,
-            b,
-            metric_cost_matrix,
-            reg=reg,
-            reg_m=reg_m,
-            reg_type="kl",
-            method="sinkhorn_stabilized",
-            numItermax=max_num_iters,
-        )
-
-        # scale with batch_size as we initialize `a` and `b` with equal weight `1 / N` for each image (and text)
-        return transport_plan * batch_size  # pyright: ignore[reportReturnType]
 
     def forward(
         self,
@@ -341,13 +349,13 @@ class BatchLevelEntropicOTLoss(nn.Module):
             raw_cosine_sim = image_features @ text_features.T
             cost_matrix = 1 - raw_cosine_sim  # values are in range [0, 2]
             if self.sinkhorn_solver == "sinkhorn":
-                transport_plan = self.sinkhorn(
+                transport_plan = sinkhorn(
                     metric_cost_matrix=cost_matrix,
                     reg=0.05,
                     max_num_iters=200,
                 )
             elif self.sinkhorn_solver == "sinkhorn_unbalanced":
-                transport_plan = self.sinkhorn_unbalanced(
+                transport_plan = sinkhorn_unbalanced(
                     metric_cost_matrix=cost_matrix,
                     reg=0.05,
                     reg_m=0.5,  # cosine similarity scores < (1 - 0.5) = 0.5 will be considered as dissimilar/noisy
@@ -406,10 +414,10 @@ class BatchLevelEntropicOTLoss(nn.Module):
             else:
                 # use transport plan as soft targets
 
-                logits_per_image, logits_per_text = self.get_logits(
+                logits_per_image, logits_per_text = compute_logits(
                     image_features,
                     text_features,
-                    logit_scale,
+                    logit_scale=logit_scale,
                     logit_bias=logit_bias,
                 )
 
