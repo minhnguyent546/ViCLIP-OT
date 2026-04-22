@@ -227,15 +227,18 @@ def compute_embeddings(args: argparse.Namespace) -> None:
     else:
         caption_embeddings = None
         image_embeddings = None
+        _prepare_inputs_for_vllm = partial(prepare_vllm_inputs, llm=model)
         for i in range(0, len(caption_inputs), args.batch_size_text):
             batch_caption_inputs = caption_inputs[i : i + args.batch_size_text]
             logger.info(
                 f"Processing text batch {i // args.batch_size_text + 1}/{(len(caption_inputs) + args.batch_size_text - 1) // args.batch_size_text}..."
             )
 
-            vllm_batch_caption_inputs = [
-                prepare_vllm_inputs(caption_input, model) for caption_input in batch_caption_inputs
-            ]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=args.num_workers) as executor:
+                vllm_batch_caption_inputs = list(
+                    tqdm(executor.map(_prepare_inputs_for_vllm, batch_caption_inputs))
+                )
+
             batch_caption_outputs = model.embed(vllm_batch_caption_inputs)  # pyright: ignore
             batch_caption_embeddings = torch.tensor(
                 [output.outputs.embedding for output in batch_caption_outputs]
@@ -249,7 +252,6 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                     dim=0,
                 )
 
-        _prepare_inputs_for_vllm = partial(prepare_vllm_inputs, llm=model)
         for i in range(0, len(image_inputs), args.batch_size_image):
             batch_image_inputs = image_inputs[i : i + args.batch_size_image]
             logger.info(
