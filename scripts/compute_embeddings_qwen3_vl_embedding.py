@@ -444,6 +444,13 @@ def set_seed(seed: int = 42) -> None:
     torch.backends.cudnn.benchmark = False
 
 
+def to_hms(seconds: float) -> str:
+    """Convert seconds to hours, minutes, seconds format."""
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{int(hours)}h {int(minutes)}m {secs:.2f}s"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Pre-compute caption embeddings using a sentence-transformer model",
