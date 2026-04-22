@@ -3,10 +3,12 @@
 # `qwen3_vl_embedding` script can be downloaded from: https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B/blob/2a50926d213628c727f38025982a76f655673f54/scripts/qwen3_vl_embedding.py
 
 import argparse
+import concurrent.futures
 import json
 import os
 import random
 import time
+from functools import partial
 from typing import Any
 
 import numpy as np
@@ -247,15 +249,18 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                     dim=0,
                 )
 
+        _prepare_inputs_for_vllm = partial(prepare_vllm_inputs, llm=model)
         for i in range(0, len(image_inputs), args.batch_size):
             batch_image_inputs = image_inputs[i : i + args.batch_size]
             logger.info(
                 f"Processing image batch {i // args.batch_size + 1}/{(len(image_inputs) + args.batch_size - 1) // args.batch_size}..."
             )
 
-            vllm_batch_image_inputs = [
-                prepare_vllm_inputs(image_input, model) for image_input in batch_image_inputs
-            ]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=args.num_workers) as executor:
+                vllm_batch_image_inputs = list(
+                    tqdm(executor.map(_prepare_inputs_for_vllm, batch_image_inputs))
+                )
+
             batch_image_outputs = model.embed(vllm_batch_image_inputs)  # pyright: ignore
             batch_image_embeddings = torch.tensor(
                 [output.outputs.embedding for output in batch_image_outputs]
@@ -459,6 +464,12 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         type=int,
         help="Tensor parallel size for vLLM. Only applicable if backend is vLLM.",
         default=1,
+    )
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        help="Number of worker threads for preparing inputs for vLLM (set to 0 to disable multithreading)",
+        default=5,
     )
 
 
