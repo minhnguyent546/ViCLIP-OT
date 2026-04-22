@@ -236,7 +236,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.num_workers) as executor:
                 vllm_batch_caption_inputs = list(
-                    tqdm(executor.map(_prepare_inputs_for_vllm, batch_caption_inputs))
+                    tqdm(
+                        executor.map(_prepare_inputs_for_vllm, batch_caption_inputs),
+                        total=len(batch_caption_inputs),
+                    )
                 )
 
             batch_caption_outputs = model.embed(vllm_batch_caption_inputs)  # pyright: ignore
@@ -260,7 +263,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.num_workers) as executor:
                 vllm_batch_image_inputs = list(
-                    tqdm(executor.map(_prepare_inputs_for_vllm, batch_image_inputs))
+                    tqdm(
+                        executor.map(_prepare_inputs_for_vllm, batch_image_inputs),
+                        total=len(batch_image_inputs),
+                    )
                 )
 
             batch_image_outputs = model.embed(vllm_batch_image_inputs)  # pyright: ignore
