@@ -157,10 +157,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
 
         with torch.inference_mode():
             for i in tqdm(
-                range(0, len(caption_inputs), args.batch_size),
+                range(0, len(caption_inputs), args.batch_size_text),
                 desc="Computing caption embeddings",
             ):
-                batch_caption = caption_inputs[i : i + args.batch_size]
+                batch_caption = caption_inputs[i : i + args.batch_size_text]
                 batch_caption_embeddings = model.process(  # pyright: ignore
                     batch_caption,
                     normalize=args.normalize,
@@ -179,10 +179,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
             )
 
             for i in tqdm(
-                range(0, len(image_inputs), args.batch_size),
+                range(0, len(image_inputs), args.batch_size_image),
                 desc="Computing image embeddings",
             ):
-                batch_image = image_inputs[i : i + args.batch_size]
+                batch_image = image_inputs[i : i + args.batch_size_image]
 
                 batch_image_pils = []
                 for sample in batch_image:
@@ -227,10 +227,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
     else:
         caption_embeddings = None
         image_embeddings = None
-        for i in range(0, len(caption_inputs), args.batch_size):
-            batch_caption_inputs = caption_inputs[i : i + args.batch_size]
+        for i in range(0, len(caption_inputs), args.batch_size_text):
+            batch_caption_inputs = caption_inputs[i : i + args.batch_size_text]
             logger.info(
-                f"Processing text batch {i // args.batch_size + 1}/{(len(caption_inputs) + args.batch_size - 1) // args.batch_size}..."
+                f"Processing text batch {i // args.batch_size_text + 1}/{(len(caption_inputs) + args.batch_size_text - 1) // args.batch_size}..."
             )
 
             vllm_batch_caption_inputs = [
@@ -250,10 +250,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 )
 
         _prepare_inputs_for_vllm = partial(prepare_vllm_inputs, llm=model)
-        for i in range(0, len(image_inputs), args.batch_size):
-            batch_image_inputs = image_inputs[i : i + args.batch_size]
+        for i in range(0, len(image_inputs), args.batch_size_image):
+            batch_image_inputs = image_inputs[i : i + args.batch_size_image]
             logger.info(
-                f"Processing image batch {i // args.batch_size + 1}/{(len(image_inputs) + args.batch_size - 1) // args.batch_size}..."
+                f"Processing image batch {i // args.batch_size_image + 1}/{(len(image_inputs) + args.batch_size_image - 1) // args.batch_size}..."
             )
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.num_workers) as executor:
@@ -432,9 +432,15 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         default="train.json",
     )
     parser.add_argument(
-        "--batch_size",
+        "--batch_size_text",
         type=int,
         help="Batch size for processing captions",
+        default=32,
+    )
+    parser.add_argument(
+        "--batch_size_image",
+        type=int,
+        help="Batch size for processing images",
         default=32,
     )
     parser.add_argument(
