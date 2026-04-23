@@ -405,9 +405,10 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
             "t2i_R__1",
             "t2i_R__5",
             "t2i_R__10",
+            "r_mean",
         ],
-        help="Metric to use for saving the best checkpoint (based on validation results). Prefix with '_' to indicate decreasing order (e.g. _loss).",
-        default=["_loss"],
+        help="Metric to use for saving the best checkpoint (based on validation results). Prefix with '_' to indicate decreasing order (e.g. _loss) (i.e., smaller is better).",
+        default=["r_mean"],
     )
     group.add_argument(
         "--save_best_k",

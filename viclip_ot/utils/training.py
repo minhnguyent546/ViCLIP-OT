@@ -34,6 +34,8 @@ class EvalResults(TypedDict):
     t2i_R__5: float
     t2i_R__10: float
 
+    r_mean: float
+
     alignment_score: float
     modality_gap: float
 
@@ -90,6 +92,7 @@ def convert_eval_results_to_dict(eval_results: EvalResults, fmt: str = "0.4f") -
         "t2i_R__1": f"{eval_results['t2i_R__1']:{fmt}}",
         "t2i_R__5": f"{eval_results['t2i_R__5']:{fmt}}",
         "t2i_R__10": f"{eval_results['t2i_R__10']:{fmt}}",
+        "r_mean": f"{eval_results['r_mean']:{fmt}}",
         "alignment_score": f"{eval_results['alignment_score']:{fmt}}",
         "modality_gap": f"{eval_results['modality_gap']:{fmt}}",
     }
@@ -331,6 +334,15 @@ def get_retrieval_metrics(
 
     metrics.update(_compute_retrieval_metrics(logits_t2i, mask_t2i, prefix="t2i"))
 
+    metrics["r_mean"] = (
+        metrics["i2t_R__1"]
+        + metrics["i2t_R__5"]
+        + metrics["i2t_R__10"]
+        + metrics["t2i_R__1"]
+        + metrics["t2i_R__5"]
+        + metrics["t2i_R__10"]
+    ) / 6.0
+
     return metrics
 
 
@@ -496,6 +508,7 @@ def maybe_log_eval_results(
         f"{prefix}/t2i_R__1": eval_results["t2i_R__1"],
         f"{prefix}/t2i_R__5": eval_results["t2i_R__5"],
         f"{prefix}/t2i_R__10": eval_results["t2i_R__10"],
+        f"{prefix}/r_mean": eval_results["r_mean"],
         f"{prefix}/alignment_score": eval_results["alignment_score"],
         f"{prefix}/modality_gap": eval_results["modality_gap"],
         "epoch": epoch + 1,
@@ -521,6 +534,7 @@ def print_eval_results(
         f"{prefix}_loss: {eval_results['loss']:0.4f} | "
         f"{prefix}_i2t_r@{{1,5,10}}: {eval_results['i2t_R__1']:0.4f} / {eval_results['i2t_R__5']:0.4f} / {eval_results['i2t_R__10']:0.4f} | "
         f"{prefix}_t2i_r@{{1,5,10}}: {eval_results['t2i_R__1']:0.4f} / {eval_results['t2i_R__5']:0.4f} / {eval_results['t2i_R__10']:0.4f} | "
+        f"{prefix}_r_mean: {eval_results['r_mean']:0.4f} | "
         f"{prefix}_align_score {eval_results['alignment_score']:0.4f} | "
         f"{prefix}_modality_gap {eval_results['modality_gap']:0.4f}"
     )
