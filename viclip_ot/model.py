@@ -47,6 +47,7 @@ class ViCLIPOTConfig(BaseModel):
     image_config: ViCLIPOTImageConfig
     text_config: ViCLIPOTTextConfig
     embed_dim: int
+    max_length: int = 256  # max seq length for text encoder
 
     # `initial_temperature` is used for initializing the `logit_scale` parameter (a learnable parameter)
     # and computed as:
