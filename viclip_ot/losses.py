@@ -450,20 +450,22 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 plan_i2t = transport_plan_i2t / i2t_mass.clamp_min(eps)
                 plan_t2i = transport_plan_t2i / t2i_mass.clamp_min(eps)
 
-                kl_i2t = _generalized_kl(plan_i2t, sim_i2t).sum(dim=1)
-                kl_t2i = _generalized_kl(plan_t2i, sim_t2i).sum(dim=1)
+                kl_i2t = _generalized_kl(plan_i2t, sim_i2t)
+                kl_t2i = _generalized_kl(plan_t2i, sim_t2i)
 
-                weights_i2t = i2t_mass.squeeze(1).detach()
-                weights_t2i = t2i_mass.squeeze(1).detach()
+                weights_i2t = i2t_mass.detach()
+                weights_t2i = t2i_mass.detach()
+                weighted_kl_i2t = weights_i2t * kl_i2t
+                weighted_kl_t2i = weights_t2i * kl_t2i
                 if reduction == "mean":
-                    loss_i2t = (weights_i2t * kl_i2t).sum() / weights_i2t.sum().clamp_min(eps)
-                    loss_t2i = (weights_t2i * kl_t2i).sum() / weights_t2i.sum().clamp_min(eps)
+                    loss_i2t = weighted_kl_i2t.sum() / weights_i2t.sum().clamp_min(eps)
+                    loss_t2i = weighted_kl_t2i.sum() / weights_t2i.sum().clamp_min(eps)
                 elif reduction == "sum":
-                    loss_i2t = (weights_i2t * kl_i2t).sum()
-                    loss_t2i = (weights_t2i * kl_t2i).sum()
+                    loss_i2t = weighted_kl_i2t.sum()
+                    loss_t2i = weighted_kl_t2i.sum()
                 elif reduction == "none":
-                    loss_i2t = weights_i2t * kl_i2t
-                    loss_t2i = weights_t2i * kl_t2i
+                    loss_i2t = weighted_kl_i2t
+                    loss_t2i = weighted_kl_t2i
                 else:
                     raise ValueError(
                         f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
