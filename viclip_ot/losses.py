@@ -99,6 +99,19 @@ def _compute_logits(
     return logits_per_image.to(original_dtype), logits_per_text.to(original_dtype)
 
 
+def _reduce_sample_losses(sample_losses: Tensor, reduction: str) -> Tensor:
+    """Reduce a vector of per-sample losses with CLIP/CE-compatible semantics."""
+    if reduction == "mean":
+        return sample_losses.mean()
+    if reduction == "sum":
+        return sample_losses.sum()
+    if reduction == "none":
+        return sample_losses
+    raise ValueError(
+        f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
+    )
+
+
 def _generalized_kl(P: Tensor, Q: Tensor, eps: float = 1e-8) -> Tensor:
     """
     Compute generalized KL divergence between true probability distribution ``P`` and
@@ -426,50 +439,37 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 #   non-normalized measure, while the teacher graph rows sum to 1.
                 #   This intentionally keeps mass mismatch in the loss as an
                 #   ablation to test whether raw unbalanced mass is useful or harmful.
-                prob_i2t = transport_plan_i2t
-                prob_t2i = transport_plan_t2i
-                loss_i2t = _generalized_kl(prob_i2t, sim_i2t)
-                loss_t2i = _generalized_kl(prob_t2i, sim_t2i)
-                if reduction == "mean":
-                    loss_i2t = loss_i2t.sum() / batch_size
-                    loss_t2i = loss_t2i.sum() / batch_size
-                elif reduction == "sum":
-                    loss_i2t = loss_i2t.sum()
-                    loss_t2i = loss_t2i.sum()
-                elif reduction == "none":
-                    pass
-                else:
-                    raise ValueError(
-                        f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
-                    )
+                sample_loss_i2t = _generalized_kl(transport_plan_i2t, sim_i2t).sum(dim=1)
+                sample_loss_t2i = _generalized_kl(transport_plan_t2i, sim_t2i).sum(dim=1)
+                loss_i2t = _reduce_sample_losses(sample_loss_i2t, reduction)
+                loss_t2i = _reduce_sample_losses(sample_loss_t2i, reduction)
             elif self.sigrot_unbalanced_variant == "row_norm_mass_weighted":
                 # `row_norm_mass_weighted`: normalize the unbalanced plan into proper row-wise
-                # distributions, then use detached row/column mass as confidence.
-                # This prevents KL from comparing incompatible mass scales while
-                # still letting unbalanced OT downweight noisy/ambiguous rows.
+                # distributions, then use detached row/column mass as relative confidence.
+                #
+                # Important: use mass / mean(mass), not raw mass. Raw unbalanced mass
+                # also changes the global SIGROT loss scale as total transported mass
+                # changes during training, which can make this branch much weaker than
+                # the raw/balanced baselines. Normalizing preserves relative confidence
+                # while keeping the average per-sample loss scale stable.
                 plan_i2t = transport_plan_i2t / i2t_mass.clamp_min(eps)
                 plan_t2i = transport_plan_t2i / t2i_mass.clamp_min(eps)
 
-                kl_i2t = _generalized_kl(plan_i2t, sim_i2t)
-                kl_t2i = _generalized_kl(plan_t2i, sim_t2i)
+                row_kl_i2t = _generalized_kl(plan_i2t, sim_i2t).sum(dim=1)
+                row_kl_t2i = _generalized_kl(plan_t2i, sim_t2i).sum(dim=1)
 
-                weights_i2t = i2t_mass.detach()
-                weights_t2i = t2i_mass.detach()
-                weighted_kl_i2t = weights_i2t * kl_i2t
-                weighted_kl_t2i = weights_t2i * kl_t2i
-                if reduction == "mean":
-                    loss_i2t = weighted_kl_i2t.sum() / weights_i2t.sum().clamp_min(eps)
-                    loss_t2i = weighted_kl_t2i.sum() / weights_t2i.sum().clamp_min(eps)
-                elif reduction == "sum":
-                    loss_i2t = weighted_kl_i2t.sum()
-                    loss_t2i = weighted_kl_t2i.sum()
-                elif reduction == "none":
-                    loss_i2t = weighted_kl_i2t
-                    loss_t2i = weighted_kl_t2i
-                else:
-                    raise ValueError(
-                        f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
-                    )
+                weights_i2t = i2t_mass.detach() / i2t_mass.detach().mean().clamp_min(eps)
+                weights_t2i = t2i_mass.detach() / t2i_mass.detach().mean().clamp_min(eps)
+                weights_i2t = weights_i2t.clamp(min=0.5, max=2.0)
+                weights_t2i = weights_t2i.clamp(min=0.5, max=2.0)
+                # TODO: consider warmup/blending for these confidence weights, e.g.
+                #   w = (1 - alpha) + alpha * clipped_normalized_mass,
+                # with alpha scheduled from 0 to 1. This may avoid suppressing
+                # currently-hard samples too aggressively early in training.
+                sample_loss_i2t = weights_i2t.squeeze(1) * row_kl_i2t
+                sample_loss_t2i = weights_t2i.squeeze(1) * row_kl_t2i
+                loss_i2t = _reduce_sample_losses(sample_loss_i2t, reduction)
+                loss_t2i = _reduce_sample_losses(sample_loss_t2i, reduction)
             elif self.sigrot_unbalanced_variant == "mass_matched_gkl":
                 # `mass_matched_gkl`: keep the unbalanced plan as a measure, but scale the
                 # teacher graph by detached OT mass so P and Q have compatible row
@@ -477,24 +477,18 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 # accidental penalty against a fixed row-sum-1 teacher distribution.
                 sim_measure_i2t = i2t_mass.detach() * sim_i2t
                 sim_measure_t2i = t2i_mass.detach() * sim_t2i
-                prob_i2t = transport_plan_i2t
-                prob_t2i = transport_plan_t2i
 
-                loss_i2t = _generalized_kl(prob_i2t, sim_measure_i2t)
-                loss_t2i = _generalized_kl(prob_t2i, sim_measure_t2i)
-
-                if reduction == "mean":
-                    loss_i2t = loss_i2t.sum() / i2t_mass.detach().sum().clamp_min(eps)
-                    loss_t2i = loss_t2i.sum() / t2i_mass.detach().sum().clamp_min(eps)
-                elif reduction == "sum":
-                    loss_i2t = loss_i2t.sum()
-                    loss_t2i = loss_t2i.sum()
-                elif reduction == "none":
-                    pass
-                else:
-                    raise ValueError(
-                        f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
-                    )
+                # Divide by mean detached mass for stable loss scale. This does not
+                # remove the measure-level gradient behavior of this variant; it only
+                # avoids making the effective SIGROT weight depend on total OT mass.
+                sample_loss_i2t = _generalized_kl(transport_plan_i2t, sim_measure_i2t).sum(
+                    dim=1
+                ) / i2t_mass.detach().mean().clamp_min(eps)
+                sample_loss_t2i = _generalized_kl(transport_plan_t2i, sim_measure_t2i).sum(
+                    dim=1
+                ) / t2i_mass.detach().mean().clamp_min(eps)
+                loss_i2t = _reduce_sample_losses(sample_loss_i2t, reduction)
+                loss_t2i = _reduce_sample_losses(sample_loss_t2i, reduction)
             else:
                 raise ValueError(
                     f"Unsupported SIGROT unbalanced variant: {self.sigrot_unbalanced_variant}"
