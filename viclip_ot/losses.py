@@ -41,7 +41,7 @@ def _sinkhorn(
 
 
 def _sinkhorn_unbalanced(
-    metric_cost_matrix,
+    metric_cost_matrix: Tensor,
     reg: float = 0.05,  # try with [0.01, 0.1] with normalized cost matrix
     reg_m: float = 0.5,  # try with [0.3, 0.8] with normalized cost matrix
     max_num_iters: int = 200,
@@ -99,15 +99,11 @@ def _compute_logits(
     return logits_per_image.to(original_dtype), logits_per_text.to(original_dtype)
 
 
-def _generalized_kl(P: Tensor, Q: Tensor, eps: float | None = None) -> Tensor:
+def _generalized_kl(P: Tensor, Q: Tensor, eps: float = 1e-8) -> Tensor:
     """
     Compute generalized KL divergence between true probability distribution ``P`` and
     approximated probability distribution ``Q``.
     """
-
-    if eps is None:
-        eps = torch.finfo(P.dtype).eps
-
     divergence = P * (P.clamp_min(eps).log() - Q.clamp_min(eps).log() - 1) + Q
     return divergence
 
@@ -405,14 +401,14 @@ class BatchLevelEntropicOTLoss(nn.Module):
             with torch.no_grad():
                 self.last_transport_stats.update(  # pyright: ignore[reportCallIssue]
                     {
-                        "i2t_mass_mean": i2t_mass.mean(),
-                        "i2t_mass_std": i2t_mass.std(unbiased=False),
-                        "i2t_mass_min": i2t_mass.min(),
-                        "i2t_mass_max": i2t_mass.max(),
-                        "t2i_mass_mean": t2i_mass.mean(),
-                        "t2i_mass_std": t2i_mass.std(unbiased=False),
-                        "t2i_mass_min": t2i_mass.min(),
-                        "t2i_mass_max": t2i_mass.max(),
+                        "i2t_mass_mean": i2t_mass.mean().item(),
+                        "i2t_mass_std": i2t_mass.std(unbiased=False).item(),
+                        "i2t_mass_min": i2t_mass.min().item(),
+                        "i2t_mass_max": i2t_mass.max().item(),
+                        "t2i_mass_mean": t2i_mass.mean().item(),
+                        "t2i_mass_std": t2i_mass.std(unbiased=False).item(),
+                        "t2i_mass_min": t2i_mass.min().item(),
+                        "t2i_mass_max": t2i_mass.max().item(),
                     }  # pyright: ignore[reportArgumentType]
                 )
 
