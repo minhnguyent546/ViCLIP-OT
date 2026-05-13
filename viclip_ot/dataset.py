@@ -1,4 +1,5 @@
 import json
+import multiprocessing
 import os
 from collections import defaultdict
 from typing import Literal
@@ -9,12 +10,13 @@ from PIL import Image
 from pydantic import BaseModel
 from torch import Tensor
 from torch.utils.data import Dataset
+from tqdm.autonotebook import tqdm
 
 from viclip_ot.utils.logger import logger
 
 
 class ImageTextDataImage(BaseModel):
-    id: int | str
+    id: int
     image_path: str
 
 
@@ -66,24 +68,37 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
         self,
         root_dir: str,
         metadata_json_file: str,
+        split: str,
         image_transforms=None,
         model_fmt: Literal["gemma", "e5", "qwen3", "bge", "sbert"] = "gemma",
+        num_workers: int = 1,
     ) -> None:
         self.root_dir = root_dir
         self.metadata_file_path = os.path.join(self.root_dir, metadata_json_file)
+        self.split = split
         self.image_transforms = image_transforms
         self.model_fmt = model_fmt
+        self.num_workers = max(1, num_workers)
 
         logger.info(f"Loading image text data from: {self.metadata_file_path}")
         with open(self.metadata_file_path, "r") as f:
             self.metadata = ImageTextData.model_validate(json.load(f))
 
+        orig_num_images = len(self.metadata.images)
+        orig_num_annotations = len(self.metadata.annotations)
         logger.info(
-            f"Found {len(self.metadata.images)} images and {len(self.metadata.annotations)} annotations."
+            f"[{self.split}] Found {orig_num_images} images and {orig_num_annotations} annotations in {self.root_dir}."
         )
+        # Filter corrupted images
+        self._filter_corrupted_images()
+        if len(self.metadata.images) < orig_num_images:
+            logger.info(
+                f"[{self.split}] Filtered {orig_num_images - len(self.metadata.images)} images!! {len(self.metadata.images)} and {len(self.metadata.annotations)} annotations remain."
+            )
+
         self.id_to_image_path = {image.id: image.image_path for image in self.metadata.images}
 
-        captions_by_image_id: dict[int, list[tuple[int, str]]] = defaultdict(list)
+        captions_by_image_id: dict[int, list[tuple[int | str, str]]] = defaultdict(list)
         for annotation in self.metadata.annotations:
             image_id = annotation.image_id
             if image_id not in self.id_to_image_path:
@@ -123,6 +138,49 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
 
         return p_ids
 
+    def _filter_corrupted_images(self) -> None:
+        """
+        Filter out corrupted images that cannot be opened by PIL.
+        """
+
+        def _check_single_image(args: tuple[str, int]) -> tuple[bool, int]:
+            image_path, image_id = args
+            if not os.path.isfile(image_path):
+                logger.debug(f"Image file not found for imgid {image_id}: {image_path}")
+                return False, image_id
+
+            try:
+                # need to call .load() as .verify() does not detect truncated images
+                Image.open(image_path).load()
+                return True, image_id
+            except Exception as e:
+                logger.debug(f"Corrupt image at {image_path}, skipping. Error: {e}")
+                return False, image_id
+
+        tasks = [
+            (os.path.join(self.root_dir, "images", image.image_path), image.id)
+            for image in self.metadata.images
+        ]
+
+        with multiprocessing.Pool(processes=self.num_workers) as pool:
+            results = list(
+                tqdm(
+                    pool.imap_unordered(_check_single_image, tasks),
+                    total=len(tasks),
+                    desc=f"[{self.split}] Filtering corrupted images (num_workers={self.num_workers})",
+                )
+            )
+
+        valid_image_ids = {image_id for is_valid, image_id in results if is_valid}
+        valid_images = [image for image in self.metadata.images if image.id in valid_image_ids]
+
+        self.metadata.images = valid_images
+        self.metadata.annotations = [
+            annotation
+            for annotation in self.metadata.annotations
+            if annotation.image_id in valid_image_ids
+        ]
+
     def __len__(self):
         return len(self.samples)
 
@@ -137,7 +195,7 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
 
             image = image.convert("RGB")
 
-        except (OSError, SyntaxError) as e:
+        except (OSError, IOError, SyntaxError) as e:
             logger.warning(f"Corrupt image at {image_path}, skipping. Error: {e}")
             # recursively get the next image
             return self.__getitem__((idx + 1) % len(self))
