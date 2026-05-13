@@ -138,34 +138,34 @@ class ImageTextDataset(Dataset[tuple[Image.Image | Tensor, list[str], int, int]]
 
         return p_ids
 
+    def _check_single_image(self, args: tuple[str, int]) -> tuple[bool, int]:
+        image_path, image_id = args
+        if not os.path.isfile(image_path):
+            logger.debug(f"Image file not found for imgid {image_id}: {image_path}")
+            return False, image_id
+
+        try:
+            # need to call .load() as .verify() does not detect truncated images
+            Image.open(image_path).load()
+            return True, image_id
+        except Exception as e:
+            logger.debug(f"Corrupt image at {image_path}, skipping. Error: {e}")
+            return False, image_id
+
     def _filter_corrupted_images(self) -> None:
         """
         Filter out corrupted images that cannot be opened by PIL.
         """
 
-        def _check_single_image(args: tuple[str, int]) -> tuple[bool, int]:
-            image_path, image_id = args
-            if not os.path.isfile(image_path):
-                logger.debug(f"Image file not found for imgid {image_id}: {image_path}")
-                return False, image_id
-
-            try:
-                # need to call .load() as .verify() does not detect truncated images
-                Image.open(image_path).load()
-                return True, image_id
-            except Exception as e:
-                logger.debug(f"Corrupt image at {image_path}, skipping. Error: {e}")
-                return False, image_id
-
         tasks = [
-            (os.path.join(self.root_dir, "images", image.image_path), image.id)
+            (os.path.join(self.root_dir, image.image_path), image.id)
             for image in self.metadata.images
         ]
 
         with multiprocessing.Pool(processes=self.num_workers) as pool:
             results = list(
                 tqdm(
-                    pool.imap_unordered(_check_single_image, tasks),
+                    pool.imap_unordered(self._check_single_image, tasks),
                     total=len(tasks),
                     desc=f"[{self.split}] Filtering corrupted images (num_workers={self.num_workers})",
                 )
