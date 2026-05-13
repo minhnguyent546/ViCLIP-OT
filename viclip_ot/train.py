@@ -185,6 +185,7 @@ def train_model(args: argparse.Namespace) -> None:
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
             sim_matrix_temperature=args.sim_matrix_temperature,
+            sigrot_unbalanced_variant=args.sigrot_unbalanced_variant,
         )
     elif args.criterion == "hybrid_clip_tp_loss":
         criterion = losses.HybridClipTPLoss(
@@ -192,6 +193,7 @@ def train_model(args: argparse.Namespace) -> None:
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
             sim_matrix_temperature=args.sim_matrix_temperature,
+            sigrot_unbalanced_variant=args.sigrot_unbalanced_variant,
         )
     elif args.criterion == "hybrid_sig_lip_tp_loss":
         criterion = losses.HybridSigLipTPLoss(
@@ -199,6 +201,7 @@ def train_model(args: argparse.Namespace) -> None:
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
             sim_matrix_temperature=args.sim_matrix_temperature,
+            sigrot_unbalanced_variant=args.sigrot_unbalanced_variant,
         )
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
@@ -830,6 +833,18 @@ def train_model(args: argparse.Namespace) -> None:
                 log_data["train/logit_scale"] = model.logit_scale.exp().item()
                 if model.logit_bias is not None:
                     log_data["train/logit_bias"] = model.logit_bias.item()
+
+                # SIGROT OT-mass diagnostics.  These are especially useful for
+                # unbalanced variants: balanced OT should stay near row/col mass 1,
+                # while excessive variance or near-zero mass can indicate that the
+                # solver is downweighting too many hard/noisy samples.
+                transport_stats = getattr(criterion, "last_transport_stats", None)
+                if transport_stats:
+                    for stat_name, stat_value in transport_stats.items():
+                        if isinstance(stat_value, str):
+                            continue
+                        log_data[f"train/ot/{stat_name}"] = stat_value
+
                 wandb_run.log(log_data, step=global_step)
 
             if (epoch <= args.lr_warmup_epochs - 1) and (warmup_lr_scheduler is not None):
