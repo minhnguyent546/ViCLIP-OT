@@ -290,7 +290,9 @@ def train_model(args: argparse.Namespace) -> None:
         f"val_size = {len(val_dataset)} "
     )
 
-    collate_fun = ImageTextCollate(tokenizer=tokenizer, caption_to_use="all")
+    collate_fun = ImageTextCollate(
+        tokenizer=tokenizer, max_length=model_config.max_length, caption_to_use="all"
+    )
     # creating data loaders
     train_data_loader = DataLoader(
         train_dataset,
