@@ -282,6 +282,8 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                     dim=0,
                 )
 
+            del batch_image_embeddings  # free up memory
+
         image_embeddings = image_embeddings.repeat_interleave(
             torch.tensor(caption_counts, device=image_embeddings.device), dim=0
         )

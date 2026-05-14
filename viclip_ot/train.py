@@ -428,6 +428,7 @@ def train_model(args: argparse.Namespace) -> None:
             f"      i2t_R__10: {test_results['i2t_R__10']:0.6f}\n"
             f"      i2t_mean_rank: {test_results['i2t_mean_rank']:0.6f}\n"
             f"      i2t_median_rank: {test_results['i2t_median_rank']:0.6f}\n"
+            f"    R_mean: {test_results['r_mean']:0.6f}\n"
             f"    Alignment_score: {test_results['alignment_score']:0.6f}\n"
             f"    Modality_gap: {test_results['modality_gap']:0.6f}\n"
             f"    Elapsed time: {utils.to_hms(test_elapsed_time)}\n"
