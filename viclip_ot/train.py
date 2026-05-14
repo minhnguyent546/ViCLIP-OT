@@ -912,6 +912,7 @@ def train_model(args: argparse.Namespace) -> None:
             criterion=eval_criterion,
             eval_data_loader=val_data_loader,
             device=device,
+            autocast_context=autocast_context,
         )
         print_eval_results(eval_results=val_results, prefix="val", epoch=epoch + 1, logger=logger)
 
@@ -929,6 +930,7 @@ def train_model(args: argparse.Namespace) -> None:
             criterion=eval_criterion,
             eval_data_loader=test_data_loader,
             device=device,
+            autocast_context=autocast_context,
         )
         print_eval_results(
             eval_results=test_results, prefix="test", epoch=epoch + 1, logger=logger
