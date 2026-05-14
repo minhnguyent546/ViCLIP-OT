@@ -112,6 +112,49 @@ def _reduce_sample_losses(sample_losses: Tensor, reduction: str) -> Tensor:
     )
 
 
+def _project_to_bounded_mean_one_weights(
+    weights: Tensor,
+    min_weight: float,
+    max_weight: float,
+    eps: float,
+) -> Tensor:
+    """Project positive sample weights onto {w: mean(w)=1, min<=w<=max}.
+
+    This is the Euclidean projection onto a capped simplex after shifting the
+    weights by a scalar Lagrange multiplier.  Compared with plain clipping, it
+    preserves the SIGROT branch loss scale exactly while retaining hard per-row
+    confidence bounds.  The input is expected to be detached if the projection is
+    used only for confidence weighting.
+    """
+    if min_weight > 1.0 or max_weight < 1.0 or min_weight > max_weight:
+        raise ValueError(
+            "Expected feasible bounds with min_weight <= 1 <= max_weight, got "
+            f"min_weight={min_weight}, max_weight={max_weight}."
+        )
+
+    projected = weights.clamp(min=min_weight, max=max_weight)
+    target_sum = torch.ones_like(projected.sum()) * projected.numel()
+
+    # Fast path: if simple clipping already has mean one, no projection is needed.
+    if torch.isclose(projected.sum(), target_sum, rtol=1e-6, atol=10 * eps):
+        return projected
+
+    # Find tau such that sum(clamp(weights - tau, min_weight, max_weight)) = B.
+    # The sum is monotone decreasing in tau.  These initial bounds are sufficient
+    # to make all entries saturate at max/min respectively.
+    lower = (weights - max_weight).min()
+    upper = (weights - min_weight).max()
+    for _ in range(32):
+        tau = (lower + upper) / 2
+        candidate = (weights - tau).clamp(min=min_weight, max=max_weight)
+        if candidate.sum() > target_sum:
+            lower = tau
+        else:
+            upper = tau
+
+    return (weights - upper).clamp(min=min_weight, max=max_weight)
+
+
 def _generalized_kl(P: Tensor, Q: Tensor, eps: float = 1e-8) -> Tensor:
     """
     Compute generalized KL divergence between true probability distribution ``P`` and
@@ -471,10 +514,51 @@ class BatchLevelEntropicOTLoss(nn.Module):
 
                 weights_i2t = i2t_mass.detach() / i2t_mass.detach().mean().clamp_min(eps)
                 weights_t2i = t2i_mass.detach() / t2i_mass.detach().mean().clamp_min(eps)
-                weights_i2t = weights_i2t.clamp(min=0.5, max=2.0)
-                weights_t2i = weights_t2i.clamp(min=0.5, max=2.0)
+
+                # Treat mass as a bounded confidence / density-ratio weight.  A
+                # plain clamp is a truncated-importance-weight heuristic but it
+                # changes the average SIGROT loss scale whenever many examples
+                # hit a bound.  Projecting onto the bounded mean-one simplex keeps
+                # the hard confidence bounds and enforces E_batch[w] = 1 exactly.
+                # The [0.5, 2.0] range is still a conservative trust-region
+                # hyperparameter, not a theorem; consider exposing it for ablation.
+                weights_i2t = _project_to_bounded_mean_one_weights(
+                    weights_i2t, min_weight=0.5, max_weight=2.0, eps=eps
+                )
+                weights_t2i = _project_to_bounded_mean_one_weights(
+                    weights_t2i, min_weight=0.5, max_weight=2.0, eps=eps
+                )
+                with torch.no_grad():
+                    self.last_transport_stats.update(  # pyright: ignore[reportCallIssue]
+                        {
+                            "i2t_mass_weight_mean": weights_i2t.mean().item(),
+                            "i2t_mass_weight_std": weights_i2t.std(unbiased=False).item(),
+                            "i2t_mass_weight_min": weights_i2t.min().item(),
+                            "i2t_mass_weight_max": weights_i2t.max().item(),
+                            "i2t_mass_weight_clip_min_frac": (weights_i2t <= 0.5 + 10 * eps)
+                            .float()
+                            .mean()
+                            .item(),
+                            "i2t_mass_weight_clip_max_frac": (weights_i2t >= 2.0 - 10 * eps)
+                            .float()
+                            .mean()
+                            .item(),
+                            "t2i_mass_weight_mean": weights_t2i.mean().item(),
+                            "t2i_mass_weight_std": weights_t2i.std(unbiased=False).item(),
+                            "t2i_mass_weight_min": weights_t2i.min().item(),
+                            "t2i_mass_weight_max": weights_t2i.max().item(),
+                            "t2i_mass_weight_clip_min_frac": (weights_t2i <= 0.5 + 10 * eps)
+                            .float()
+                            .mean()
+                            .item(),
+                            "t2i_mass_weight_clip_max_frac": (weights_t2i >= 2.0 - 10 * eps)
+                            .float()
+                            .mean()
+                            .item(),
+                        }
+                    )
                 # TODO: consider warmup/blending for these confidence weights, e.g.
-                #   w = (1 - alpha) + alpha * clipped_normalized_mass,
+                #   w = (1 - alpha) + alpha * bounded_projected_mass_weight,
                 # with alpha scheduled from 0 to 1. This may avoid suppressing
                 # currently-hard samples too aggressively early in training.
                 sample_loss_i2t = weights_i2t.squeeze(1) * row_kl_i2t
