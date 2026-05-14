@@ -181,13 +181,11 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
             "Ablation variant for similarity-graph regularized OT when "
             "--sinkhorn_solver=sinkhorn_unbalanced. 'raw_gkl' keeps the previous "
             "unnormalized behavior; 'row_norm_mass_weighted' normalizes rows/cols "
-            "and uses detached OT mass as confidence; 'mass_matched_gkl' scales the "
-            "teacher graph by detached OT mass before generalized KL."
+            "and uses detached OT mass as confidence"
         ),
         choices=[
             "raw_gkl",
             "row_norm_mass_weighted",
-            "mass_matched_gkl",
         ],
         default="raw_gkl",
     )

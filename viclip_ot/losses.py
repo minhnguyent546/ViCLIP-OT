@@ -322,7 +322,6 @@ class BatchLevelEntropicOTLoss(nn.Module):
         sigrot_unbalanced_variant: Literal[
             "raw_gkl",
             "row_norm_mass_weighted",
-            "mass_matched_gkl",
         ] = "raw_gkl",
     ):
         """
@@ -482,25 +481,6 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 sample_loss_t2i = weights_t2i.squeeze(1) * row_kl_t2i
                 loss_i2t = _reduce_sample_losses(sample_loss_i2t, reduction)
                 loss_t2i = _reduce_sample_losses(sample_loss_t2i, reduction)
-            elif self.sigrot_unbalanced_variant == "mass_matched_gkl":
-                # `mass_matched_gkl`: keep the unbalanced plan as a measure, but scale the
-                # teacher graph by detached OT mass so P and Q have compatible row
-                # totals. This is measure-level GKL while avoiding the raw baseline's
-                # accidental penalty against a fixed row-sum-1 teacher distribution.
-                sim_measure_i2t = i2t_mass.detach() * sim_i2t
-                sim_measure_t2i = t2i_mass.detach() * sim_t2i
-
-                # Divide by mean detached mass for stable loss scale. This does not
-                # remove the measure-level gradient behavior of this variant; it only
-                # avoids making the effective SIGROT weight depend on total OT mass.
-                sample_loss_i2t = _generalized_kl(transport_plan_i2t, sim_measure_i2t).sum(
-                    dim=1
-                ) / i2t_mass.detach().mean().clamp_min(eps)
-                sample_loss_t2i = _generalized_kl(transport_plan_t2i, sim_measure_t2i).sum(
-                    dim=1
-                ) / t2i_mass.detach().mean().clamp_min(eps)
-                loss_i2t = _reduce_sample_losses(sample_loss_i2t, reduction)
-                loss_t2i = _reduce_sample_losses(sample_loss_t2i, reduction)
             else:
                 raise ValueError(
                     f"Unsupported SIGROT unbalanced variant: {self.sigrot_unbalanced_variant}"
@@ -576,7 +556,6 @@ class HybridClipTPLoss(nn.Module):
         sigrot_unbalanced_variant: Literal[
             "raw_gkl",
             "row_norm_mass_weighted",
-            "mass_matched_gkl",
         ] = "raw_gkl",
     ):
         """
@@ -661,7 +640,6 @@ class HybridSigLipTPLoss(nn.Module):
         sigrot_unbalanced_variant: Literal[
             "raw_gkl",
             "row_norm_mass_weighted",
-            "mass_matched_gkl",
         ] = "raw_gkl",
     ):
         """
