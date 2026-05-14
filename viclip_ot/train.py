@@ -185,6 +185,9 @@ def train_model(args: argparse.Namespace) -> None:
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
             sim_matrix_temperature=args.sim_matrix_temperature,
+            sinkhorn_reg=args.sinkhorn_reg,
+            sinkhorn_reg_m=args.sinkhorn_reg_m,
+            sinkhorn_max_num_iters=args.sinkhorn_max_num_iters,
             sigrot_unbalanced_variant=args.sigrot_unbalanced_variant,
         )
     elif args.criterion == "hybrid_clip_tp_loss":
@@ -193,6 +196,9 @@ def train_model(args: argparse.Namespace) -> None:
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
             sim_matrix_temperature=args.sim_matrix_temperature,
+            sinkhorn_reg=args.sinkhorn_reg,
+            sinkhorn_reg_m=args.sinkhorn_reg_m,
+            sinkhorn_max_num_iters=args.sinkhorn_max_num_iters,
             sigrot_unbalanced_variant=args.sigrot_unbalanced_variant,
         )
     elif args.criterion == "hybrid_sig_lip_tp_loss":
@@ -201,6 +207,9 @@ def train_model(args: argparse.Namespace) -> None:
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
             sim_matrix_temperature=args.sim_matrix_temperature,
+            sinkhorn_reg=args.sinkhorn_reg,
+            sinkhorn_reg_m=args.sinkhorn_reg_m,
+            sinkhorn_max_num_iters=args.sinkhorn_max_num_iters,
             sigrot_unbalanced_variant=args.sigrot_unbalanced_variant,
         )
     else:

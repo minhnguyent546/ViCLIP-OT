@@ -157,6 +157,24 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default="sinkhorn_unbalanced",
     )
     group.add_argument(
+        "--sinkhorn_reg",
+        type=float,
+        help="Entropic regularization strength for Sinkhorn OT losses",
+        default=0.05,
+    )
+    group.add_argument(
+        "--sinkhorn_reg_m",
+        type=float,
+        help="Marginal relaxation regularization for unbalanced Sinkhorn OT losses",
+        default=0.5,
+    )
+    group.add_argument(
+        "--sinkhorn_max_num_iters",
+        type=int,
+        help="Maximum number of Sinkhorn iterations for OT losses",
+        default=200,
+    )
+    group.add_argument(
         "--sigrot_unbalanced_variant",
         type=str,
         help=(

@@ -316,6 +316,9 @@ class BatchLevelEntropicOTLoss(nn.Module):
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn_unbalanced",
         use_transport_plan_as_logits: bool = False,
         sim_matrix_temperature: float = 0.05,
+        sinkhorn_reg: float = 0.05,
+        sinkhorn_reg_m: float = 0.5,
+        sinkhorn_max_num_iters: int = 200,
         sigrot_unbalanced_variant: Literal[
             "raw_gkl",
             "row_norm_mass_weighted",
@@ -334,10 +337,19 @@ class BatchLevelEntropicOTLoss(nn.Module):
         self.sinkhorn_solver = sinkhorn_solver
         self.use_transport_plan_as_logits = use_transport_plan_as_logits
         self.sim_matrix_scale_factor = 1 / sim_matrix_temperature
+        self.sinkhorn_reg = sinkhorn_reg
+        self.sinkhorn_reg_m = sinkhorn_reg_m
+        self.sinkhorn_max_num_iters = sinkhorn_max_num_iters
         self.sigrot_unbalanced_variant = sigrot_unbalanced_variant
         self.last_transport_stats: dict[str, float | str] = {}
 
         logger.info(f"Using Sinkhorn Solver: {self.sinkhorn_solver}")
+        logger.info(
+            "Using Sinkhorn parameters: "
+            f"reg={self.sinkhorn_reg}, "
+            f"reg_m={self.sinkhorn_reg_m}, "
+            f"max_num_iters={self.sinkhorn_max_num_iters}"
+        )
         if self.sinkhorn_solver == "sinkhorn_unbalanced":
             logger.info(f"Using SIGROT unbalanced variant: {self.sigrot_unbalanced_variant}")
 
@@ -378,15 +390,15 @@ class BatchLevelEntropicOTLoss(nn.Module):
             if self.sinkhorn_solver == "sinkhorn":
                 transport_plan_i2t = _sinkhorn(
                     metric_cost_matrix=cost_matrix_i2t,
-                    reg=0.05,
-                    max_num_iters=200,
+                    reg=self.sinkhorn_reg,
+                    max_num_iters=self.sinkhorn_max_num_iters,
                 )
             elif self.sinkhorn_solver == "sinkhorn_unbalanced":
                 transport_plan_i2t = _sinkhorn_unbalanced(
                     metric_cost_matrix=cost_matrix_i2t,
-                    reg=0.05,
-                    reg_m=0.5,  # cosine similarity scores < (1 - 0.5) = 0.5 will be considered as dissimilar/noisy
-                    max_num_iters=200,
+                    reg=self.sinkhorn_reg,
+                    reg_m=self.sinkhorn_reg_m,
+                    max_num_iters=self.sinkhorn_max_num_iters,
                 )
             else:
                 raise ValueError(f"Unsupported solver: {self.sinkhorn_solver}")
@@ -558,6 +570,9 @@ class HybridClipTPLoss(nn.Module):
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
         use_transport_plan_as_logits: bool = False,
         sim_matrix_temperature: float = 0.05,
+        sinkhorn_reg: float = 0.05,
+        sinkhorn_reg_m: float = 0.5,
+        sinkhorn_max_num_iters: int = 200,
         sigrot_unbalanced_variant: Literal[
             "raw_gkl",
             "row_norm_mass_weighted",
@@ -582,6 +597,9 @@ class HybridClipTPLoss(nn.Module):
             sinkhorn_solver=sinkhorn_solver,
             use_transport_plan_as_logits=self.use_transport_plan_as_logits,
             sim_matrix_temperature=sim_matrix_temperature,
+            sinkhorn_reg=sinkhorn_reg,
+            sinkhorn_reg_m=sinkhorn_reg_m,
+            sinkhorn_max_num_iters=sinkhorn_max_num_iters,
             sigrot_unbalanced_variant=sigrot_unbalanced_variant,
         )
 
@@ -637,6 +655,9 @@ class HybridSigLipTPLoss(nn.Module):
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
         use_transport_plan_as_logits: bool = False,
         sim_matrix_temperature: float = 0.05,
+        sinkhorn_reg: float = 0.05,
+        sinkhorn_reg_m: float = 0.5,
+        sinkhorn_max_num_iters: int = 200,
         sigrot_unbalanced_variant: Literal[
             "raw_gkl",
             "row_norm_mass_weighted",
@@ -661,6 +682,9 @@ class HybridSigLipTPLoss(nn.Module):
             sinkhorn_solver=sinkhorn_solver,
             use_transport_plan_as_logits=self.use_transport_plan_as_logits,
             sim_matrix_temperature=sim_matrix_temperature,
+            sinkhorn_reg=sinkhorn_reg,
+            sinkhorn_reg_m=sinkhorn_reg_m,
+            sinkhorn_max_num_iters=sinkhorn_max_num_iters,
             sigrot_unbalanced_variant=sigrot_unbalanced_variant,
         )
 
