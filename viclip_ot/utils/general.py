@@ -176,3 +176,18 @@ def load_yaml_file(file_path: str) -> dict[str, Any]:
         data = yaml.safe_load(f)
 
     return data
+
+
+def yaml_safe(obj: Any) -> Any:
+    """Convert common non-YAML-serializable objects to YAML-safe Python values."""
+    if isinstance(obj, dict):
+        return {str(k): yaml_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [yaml_safe(v) for v in obj]
+    if isinstance(obj, torch.Tensor):
+        return obj.item() if obj.numel() == 1 else obj.detach().cpu().tolist()
+    if isinstance(obj, np.ndarray):
+        return obj.item() if obj.ndim == 0 else obj.tolist()
+    if isinstance(obj, np.generic):
+        return obj.item()
+    return obj

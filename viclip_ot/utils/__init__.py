@@ -9,6 +9,7 @@ from viclip_ot.utils.general import (
     set_seed,
     to_hms,
     to_human_readable,
+    yaml_safe,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "set_seed",
     "to_hms",
     "to_human_readable",
+    "yaml_safe",
 ]

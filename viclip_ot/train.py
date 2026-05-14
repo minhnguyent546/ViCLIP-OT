@@ -3,12 +3,13 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 import torch.nn as nn
 import torchvision.transforms.v2 as v2
 import wandb
+import yaml
 from torch.utils.data import DataLoader
 from tqdm.autonotebook import tqdm
 
@@ -404,11 +405,19 @@ def train_model(args: argparse.Namespace) -> None:
         f"num_params: {utils.to_human_readable(num_model_params)} | num_trainable_params: {utils.to_human_readable(num_model_trainable_params)}"
     )
 
-    def _run_test_only(data_loader: DataLoader) -> None:  # pyright: ignore[reportMissingTypeArgument]
+    def _run_test_only(
+        data_loader: DataLoader,  # pyright: ignore[reportMissingTypeArgument]
+        *,
+        best_checkpoint_metric: str | None = None,
+        best_checkpoint_metric_value: float | None = None,
+        checkpoint_path: str | None = None,
+        result_yaml_path: str | None = None,
+        checkpoint_metadata: dict[str, Any] | None = None,
+    ) -> None:
         test_start_time = time.perf_counter()
         test_results = eval_model(
             model=model,
-            criterion=criterion,
+            criterion=eval_criterion,
             eval_data_loader=data_loader,
             device=device,
         )
@@ -433,6 +442,30 @@ def train_model(args: argparse.Namespace) -> None:
             f"    Modality_gap: {test_results['modality_gap']:0.6f}\n"
             f"    Elapsed time: {utils.to_hms(test_elapsed_time)}\n"
         )
+
+        if result_yaml_path is None:
+            return
+
+        checkpoint_info = {
+            "path": checkpoint_path,
+            "best_metric": best_checkpoint_metric,
+            "best_metric_value": best_checkpoint_metric_value,
+        }
+        if checkpoint_metadata is not None:
+            for key in ("epoch", "global_step", "val_results"):
+                if key in checkpoint_metadata:
+                    checkpoint_info[key] = checkpoint_metadata[key]
+
+        result_yaml = {
+            "created_at": datetime.now().astimezone().isoformat(),
+            "checkpoint": checkpoint_info,
+            "test_results": test_results,
+        }
+
+        os.makedirs(os.path.dirname(os.path.abspath(result_yaml_path)), exist_ok=True)
+        with open(result_yaml_path, "w") as f:
+            yaml.safe_dump(utils.yaml_safe(result_yaml), f, sort_keys=False)
+        logger.info(f"Saved final test results to {result_yaml_path}")
 
     if args.run_test_only:
         return _run_test_only(test_data_loader)
@@ -996,7 +1029,17 @@ def train_model(args: argparse.Namespace) -> None:
         checkpoint = torch.load(best_checkpoint_path, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"], strict=True)
 
-        _run_test_only(test_data_loader)
+        checkpoint_metadata = {
+            key: value for key, value in checkpoint.items() if key != "model_state_dict"
+        }
+        _run_test_only(
+            test_data_loader,
+            best_checkpoint_metric=best_metric_key,
+            best_checkpoint_metric_value=abs(best_metric_value),
+            checkpoint_path=best_checkpoint_path,
+            result_yaml_path=os.path.join(checkpoint_dir, "final_test_results.yml"),
+            checkpoint_metadata=checkpoint_metadata,
+        )
 
 
 def main():
