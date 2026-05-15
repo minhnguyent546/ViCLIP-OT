@@ -537,7 +537,7 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
             "msiglip",
             "jina-clip-v2",
             "jina-embeddings-v4",
-            "qwen3-vl",
+            "qwen3-vl-embedding",
             "viclip-ot",
         ],
     )
