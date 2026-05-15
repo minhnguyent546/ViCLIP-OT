@@ -513,7 +513,7 @@ def measure_one_by_one(
 ) -> list[float]:
     if not samples:
         return []
-    for sample in samples[:warmup]:
+    for sample in tqdm(samples[:warmup], desc="Warming up"):
         model_wrapper.encode_one(sample, modality)
     model_wrapper.synchronize()
 
