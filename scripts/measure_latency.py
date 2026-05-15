@@ -130,7 +130,7 @@ class SigLIPWrapper(EmbeddingModelWrapper):
         device: str | torch.device = "auto",
         dtype: str = "float32",
         use_flash_attn: bool = False,
-        max_length: int = 256,
+        max_length: int = 62,
         normalize_embeddings: bool = True,
         **kwargs,
     ) -> None:
