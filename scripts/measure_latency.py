@@ -412,7 +412,7 @@ def measure_latency(args: argparse.Namespace) -> None:
         dataset_dir=args.dataset_dir,
         metadata_json_file=args.metadata_json_file,
         max_num_images=args.max_num_images,
-        max_num_captions=args.max_num_cations,
+        max_num_captions=args.max_num_captions,
     )
     logger.info(f"Measuring {len(captions)} captions and {len(image_paths)} images")
     logger.info(
@@ -557,7 +557,7 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         "--metadata_json_file",
         type=str,
         help="Metadata JSON file containing the dataset annotations",
-        default="test.json",
+        default="val.json",
     )
     parser.add_argument(
         "--output_csv",
