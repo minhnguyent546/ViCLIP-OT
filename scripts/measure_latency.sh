@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 DATASET_DIR='./data/UIT-OpenViIC'
 METADATA_JSON_FILE='val.json'
 OUTPUT_CSV='latency_results.csv'
@@ -8,7 +10,7 @@ WARMUP_IMAGES=100
 WARMUP_CAPTIONS=100
 DTYPE='bfloat16'
 
-# # ViCLIP-OT
+# ViCLIP-OT
 uv run python scripts/measure_latency.py \
     --model_family 'viclip-ot' \
     --model_name 'minhnguyent546/ViCLIP-OT' \
@@ -34,7 +36,7 @@ uv run python scripts/measure_latency.py \
     --warmup_images "$WARMUP_IMAGES" \
     --warmup_captions "$WARMUP_CAPTIONS"
 
-# jina-clip-v2 (jina-clip-v2 use FA2 by default)
+# jina-clip-v2 (jina-clip-v2 uses FA2 by default)
 uv run python scripts/measure_latency.py \
     --model_family 'jina-clip-v2' \
     --model_name 'jinaai/jina-clip-v2' \
@@ -47,7 +49,7 @@ uv run python scripts/measure_latency.py \
     --warmup_images "$WARMUP_IMAGES" \
     --warmup_captions "$WARMUP_CAPTIONS"
 
-# jina-embeddings-v4 (jina-embeddings-v4 use FA2 by default)
+# jina-embeddings-v4 (jina-embeddings-v4 uses FA2 by default)
 uv run python scripts/measure_latency.py \
     --model_family 'jina-embeddings-v4' \
     --model_name 'jinaai/jina-embeddings-v4' \

@@ -82,7 +82,9 @@ class EmbeddingModelWrapper(ABC):
         normalize_embeddings: bool = True,
     ) -> None:
         if model_name not in self._SUPPORTED_MODELS:
-            raise ValueError(f"Unsupported model for SigLIPWrapper class: {model_name}")
+            raise ValueError(
+                f"Unsupported model for {self.__class__.__name__} class: {model_name}"
+            )
 
         if isinstance(device, str):
             if device == "auto":
@@ -403,7 +405,7 @@ def measure_latency(args: argparse.Namespace) -> None:
         "use_flash_attn": args.use_flash_attn,
         "model_name": args.model_name,
     }
-    if args.model_family == "qwen3-vl":
+    if args.model_family == "qwen3-vl-embedding":
         kwargs["instruction"] = args.instruction
 
     logger.info(f"Loading wrapper for {args.model_family}...")
@@ -422,13 +424,13 @@ def measure_latency(args: argparse.Namespace) -> None:
         model_wrapper=model_wrapper,
         samples=captions,
         modality="caption",
-        warmup=args.warmup_images,
+        warmup=args.warmup_captions,
     )
     image_ms = measure_one_by_one(
         model_wrapper=model_wrapper,
         samples=image_paths,
         modality="image",
-        warmup=args.warmup_captions,
+        warmup=args.warmup_images,
     )
 
     model_name = args.model_name
@@ -468,9 +470,9 @@ def summarize(values: list[float], family: str, model_name: str, modality: str) 
         num_samples=len(values),
         mean_ms=statistics.fmean(values),
         median_ms=statistics.median(values),
-        p90_ms=np.percentile(values, 0.90),  # pyright: ignore[reportArgumentType]
-        p95_ms=np.percentile(values, 0.95),  # pyright: ignore[reportArgumentType]
-        p99_ms=np.percentile(values, 0.99),  # pyright: ignore[reportArgumentType]
+        p90_ms=np.percentile(values, 90.0),  # pyright: ignore[reportArgumentType]
+        p95_ms=np.percentile(values, 95.0),  # pyright: ignore[reportArgumentType]
+        p99_ms=np.percentile(values, 99.0),  # pyright: ignore[reportArgumentType]
         min_ms=min(values),
         max_ms=max(values),
         std_ms=statistics.stdev(values) if len(values) > 1 else 0.0,
@@ -512,7 +514,10 @@ def measure_one_by_one(
     warmup: int,
 ) -> list[float]:
     if not samples:
-        return []
+        raise ValueError(
+            f"No {modality} samples available for latency measurement. "
+            "Check the dataset metadata and max_num_images/max_num_captions settings."
+        )
     for sample in tqdm(samples[:warmup], desc="Warming up"):
         model_wrapper.encode_one(sample, modality)
     model_wrapper.synchronize()
@@ -624,7 +629,7 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--instruction",
         type=str,
-        help="Instruction to use for encoding if the model support instruction-ware encoding",
+        help="Instruction to use for encoding if the model support instruction-aware encoding",
         default="Retrieve images or text relevant to the user's query.",
     )
 
