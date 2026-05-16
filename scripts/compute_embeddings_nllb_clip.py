@@ -89,7 +89,7 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 f"Could not find image with ID {image_id} for annotation {annotation.id}"
             )
 
-        image_path = os.path.join(dataset_dir, "images", id_to_image_path[image_id])
+        image_path = os.path.join(dataset_dir, id_to_image_path[image_id])
         samples.append((image_path, image_id, annotation.id, annotation.caption))
 
     # sorted by image_id, annotation_id
