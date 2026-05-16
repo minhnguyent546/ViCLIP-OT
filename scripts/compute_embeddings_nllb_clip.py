@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+# pyright: reportPossiblyUnboundVariable=false
+
 import argparse
 import json
 import os
@@ -8,10 +10,10 @@ import random
 import numpy as np
 import torch
 from loguru import logger
+from open_clip import create_model_from_pretrained, get_tokenizer
 from PIL import Image, ImageFile
 from pydantic import BaseModel
 from tqdm.autonotebook import tqdm
-from transformers import AutoModel, AutoProcessor
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -33,22 +35,21 @@ class ImageTextData(BaseModel):
 
 
 def compute_embeddings(args: argparse.Namespace) -> None:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    model_kwargs = {}
-    if args.use_flash_attn and args.dtype != "float32":
-        model_kwargs["attn_implementation"] = "flash_attention_2"
+    if ":" in args.model:
+        model_name, pretrained = args.model.split(":")
+    else:
+        model_name = args.model
+        pretrained = None
 
-    model = AutoModel.from_pretrained(
-        args.model,
-        trust_remote_code=True,
-        dtype=args.dtype,
-        **model_kwargs,
-    ).to(device)
-
-    num_params = sum(p.numel() for p in model.parameters())
-    logger.info(f"Loaded model {args.model} with {num_params:,} parameters.")
-    processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=True)
+    logger.info(f"Using model: {model_name} with pretrained weights: {pretrained} via OpenCLIP")
+    model, transform = create_model_from_pretrained(  # pyright: ignore
+        model_name=model_name, pretrained=pretrained, device=device
+    )
+    model.eval()
+    tokenizer = get_tokenizer(model_name)
+    tokenizer.set_language(args.language)  # pyright: ignore[reportAttributeAccessIssue]
 
     dataset_dir = args.dataset_dir
     metadata_json_file = args.metadata_json_file
@@ -78,7 +79,9 @@ def compute_embeddings(args: argparse.Namespace) -> None:
 
     id_to_image_path = {image.id: image.image_path for image in metadata.images}
 
-    samples: list[tuple[str, int, int, str]] = []
+    samples: list[
+        tuple[str, int, int | str, str]
+    ] = []  # (image_path, image_id, caption_id, caption)
     for annotation in metadata.annotations:
         image_id = annotation.image_id
         if image_id not in id_to_image_path:
@@ -103,44 +106,44 @@ def compute_embeddings(args: argparse.Namespace) -> None:
         caption_counts.append(j - i + 1)
         i = j + 1
 
-    ordered_samples_caption = [caption for _, _, _, caption in samples]
-    _permutation = np.argsort([-len(caption) for caption in ordered_samples_caption])
+    # construct inputs for the model
+    image_inputs = image_samples
+    caption_inputs = [caption for _, _, _, caption in samples]
+
+    # sort by caption length in descending order for faster inference
+    _permutation = np.argsort([-len(caption) for caption in caption_inputs])
     _inverse_permutation = np.argsort(_permutation)
-    ordered_samples_caption = [ordered_samples_caption[idx] for idx in _permutation]
+    caption_inputs = [caption_inputs[idx] for idx in _permutation]
 
     all_caption_embeddings: list[torch.Tensor] = []
     all_image_embeddings: list[torch.Tensor] = []
-    with torch.inference_mode():
+
+    with torch.no_grad():
+        logger.info("Computing caption embeddings")
+
         for i in tqdm(
-            range(0, len(ordered_samples_caption), args.batch_size),
+            range(0, len(caption_inputs), args.batch_size),
             desc="Computing caption embeddings",
         ):
-            batch_caption = ordered_samples_caption[i : i + args.batch_size]
-            batch_caption_inputs = processor(
-                text=batch_caption,
-                return_tensors="pt",
-                truncation=True,
-                max_length=64,  # siglip max length
-                padding=True,
-            ).to(device)
-
-            batch_caption_embeddings = model.get_text_features(
-                **batch_caption_inputs,
+            batch_caption = caption_inputs[i : i + args.batch_size]
+            batch_inputs = tokenizer(batch_caption).to(device)
+            batch_caption_embeddings = model.encode_text(  # pyright: ignore[reportCallIssue]
+                batch_inputs,
+                normalize=args.normalize,
             )
-
             all_caption_embeddings.append(batch_caption_embeddings)
 
-        caption_embeddings = torch.cat(all_caption_embeddings, dim=0)
+        caption_embeddings = torch.cat(all_caption_embeddings, dim=0).cpu()
         caption_embeddings = caption_embeddings[_inverse_permutation]
 
         for i in tqdm(
-            range(0, len(image_samples), args.batch_size),
+            range(0, len(image_inputs), args.batch_size),
             desc="Computing image embeddings",
         ):
-            batch_image = image_samples[i : i + args.batch_size]
+            batch_image_inputs = image_inputs[i : i + args.batch_size]
 
             batch_image_pils = []
-            for image_path in batch_image:
+            for image_path in batch_image_inputs:
                 try:
                     image = Image.open(image_path)
                     # handle palette images with transparency
@@ -154,17 +157,20 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                     logger.error(f"Error loading image {image_path}: {e}")
                     raise e
 
-            batch_image_inputs = processor(
-                images=batch_image_pils, return_tensors="pt", padding=True
-            ).to(device)
-            batch_image_embeddings = model.get_image_features(**batch_image_inputs)
+            batch_image_tensors = torch.stack([transform(img) for img in batch_image_pils]).to(
+                device
+            )
+            batch_image_embeddings = model.encode_image(  # pyright: ignore[reportCallIssue]
+                batch_image_tensors,
+                normalize=args.normalize,
+            )
 
-            del batch_image_pils  # free up memory
+            del batch_image_pils, batch_image_tensors  # free up memory
 
             all_image_embeddings.append(batch_image_embeddings)
             del batch_image_embeddings  # free up memory
 
-        image_embeddings = torch.cat(all_image_embeddings, dim=0)
+        image_embeddings = torch.cat(all_image_embeddings, dim=0).cpu()
         # expand image embeddings according to caption counts
         image_embeddings = image_embeddings.repeat_interleave(
             torch.tensor(caption_counts, device=image_embeddings.device), dim=0
@@ -175,12 +181,11 @@ def compute_embeddings(args: argparse.Namespace) -> None:
         f"image embeddings shape {image_embeddings.shape}"
     )
 
-    caption_embeddings = caption_embeddings.cpu()
-    image_embeddings = image_embeddings.cpu()
-    # save to disk to load later for computing OT transport plan during training
+    logger.info(f"Caption embeddings shape: {caption_embeddings.shape}")
+    logger.info(f"Image embeddings shape: {image_embeddings.shape}")
+
     torch.save(image_embeddings, image_save_file_path)
     torch.save(caption_embeddings, caption_save_file_path)
-
     logger.info(f"Saved image embeddings to {image_save_file_path}")
     logger.info(f"Saved caption embeddings to {caption_save_file_path}")
 
@@ -199,20 +204,15 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--model",
         type=str,
-        choices=[
-            "google/siglip-base-patch16-256-multilingual",
-            "google/siglip2-base-patch16-224",
-            "google/siglip2-base-patch16-256",
-        ],
-        help="SigLIP model to use",
-        default="google/siglip-base-patch16-256-multilingual",
+        choices=["nllb-clip-large-siglip:v1", "nllb-clip-large-siglip:mrl"],
+        help="Model to use for computing embeddings (via OpenCLIP)",
+        default="nllb-clip-large-siglip:v1",
     )
     parser.add_argument(
-        "--dtype",
+        "--language",
         type=str,
-        help="Data type for model weights",
-        choices=["float32", "float16", "bfloat16"],
-        default="float32",
+        help="Language to use for tokenization (set via tokenizer.set_language in OpenCLIP)",
+        default="vie_Latn",
     )
     parser.add_argument(
         "--dataset_dir",
@@ -233,15 +233,15 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         default=32,
     )
     parser.add_argument(
-        "--use_flash_attn",
+        "--normalize",
         action="store_true",
-        help="Whether to use flash attention if supported by the model",
+        help="Whether to normalize the embeddings",
     )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Pre-compute caption embeddings using SigLIP model",
+        description="Pre-Compute caption and image embeddings using nllb-clip- models",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_opts(parser)

@@ -31,6 +31,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "safetensors>=0.7.0",
     "pot[backend-torch]>=0.9.6.post1",
+    "open-clip-torch>=3.3.0",
 ]
 
 [project.urls]
