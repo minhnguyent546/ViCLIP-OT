@@ -115,8 +115,8 @@ def compute_embeddings(args: argparse.Namespace) -> None:
     _inverse_permutation = np.argsort(_permutation)
     caption_inputs = [caption_inputs[idx] for idx in _permutation]
 
-    image_embeddings = None
-    caption_embeddings = None
+    all_caption_embeddings: list[torch.Tensor] = []
+    all_image_embeddings: list[torch.Tensor] = []
 
     with torch.no_grad():
         logger.info("Computing caption embeddings")
@@ -131,17 +131,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 batch_inputs,
                 normalize=args.normalize,
             )
-            if i == 0:
-                caption_embeddings = batch_caption_embeddings
-            else:
-                caption_embeddings = torch.cat(
-                    (caption_embeddings, batch_caption_embeddings),  # pyright: ignore
-                    dim=0,
-                )
+            all_caption_embeddings.append(batch_caption_embeddings)
 
-        assert caption_embeddings is not None
-        caption_embeddings = caption_embeddings.cpu()  # pyright: ignore
-        caption_embeddings = torch.stack([caption_embeddings[idx] for idx in _inverse_permutation])
+        caption_embeddings = torch.cat(all_caption_embeddings, dim=0).cpu()
+        caption_embeddings = caption_embeddings[_inverse_permutation]
 
         for i in tqdm(
             range(0, len(image_inputs), args.batch_size),
@@ -174,17 +167,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
 
             del batch_image_pils, batch_image_tensors  # free up memory
 
-            if i == 0:
-                image_embeddings = batch_image_embeddings
-            else:
-                image_embeddings = torch.cat(
-                    (image_embeddings, batch_image_embeddings),  # pyright: ignore
-                    dim=0,
-                )
-
+            all_image_embeddings.append(batch_image_embeddings)
             del batch_image_embeddings  # free up memory
 
-        image_embeddings = image_embeddings.cpu()  # pyright: ignore
+        image_embeddings = torch.cat(all_image_embeddings, dim=0).cpu()
         # expand image embeddings according to caption counts
         image_embeddings = image_embeddings.repeat_interleave(
             torch.tensor(caption_counts, device=image_embeddings.device), dim=0

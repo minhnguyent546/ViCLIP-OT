@@ -108,8 +108,8 @@ def compute_embeddings(args: argparse.Namespace) -> None:
     _inverse_permutation = np.argsort(_permutation)
     ordered_samples_caption = [ordered_samples_caption[idx] for idx in _permutation]
 
-    image_embeddings = None
-    caption_embeddings = None
+    all_caption_embeddings: list[torch.Tensor] = []
+    all_image_embeddings: list[torch.Tensor] = []
     with torch.inference_mode():
         for i in tqdm(
             range(0, len(ordered_samples_caption), args.batch_size),
@@ -128,16 +128,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 **batch_caption_inputs,
             )
 
-            if i == 0:
-                caption_embeddings = batch_caption_embeddings
-            else:
-                caption_embeddings = torch.cat(
-                    (caption_embeddings, batch_caption_embeddings),  # pyright: ignore
-                    dim=0,
-                )
+            all_caption_embeddings.append(batch_caption_embeddings)
 
-        assert caption_embeddings is not None
-        caption_embeddings = torch.stack([caption_embeddings[idx] for idx in _inverse_permutation])
+        caption_embeddings = torch.cat(all_caption_embeddings, dim=0)
+        caption_embeddings = caption_embeddings[_inverse_permutation]
 
         for i in tqdm(
             range(0, len(image_samples), args.batch_size),
@@ -167,32 +161,22 @@ def compute_embeddings(args: argparse.Namespace) -> None:
 
             del batch_image_pils  # free up memory
 
-            # expand image embeddings according to caption counts
-            batch_image_embeddings = batch_image_embeddings.repeat_interleave(
-                torch.tensor(
-                    caption_counts[i : i + len(batch_image_embeddings)],
-                    device=batch_image_embeddings.device,
-                ),
-                dim=0,
-            )
-
-            if i == 0:
-                image_embeddings = batch_image_embeddings
-            else:
-                image_embeddings = torch.cat(
-                    (image_embeddings, batch_image_embeddings),  # pyright: ignore
-                    dim=0,
-                )
-
+            all_image_embeddings.append(batch_image_embeddings)
             del batch_image_embeddings  # free up memory
+
+        image_embeddings = torch.cat(all_image_embeddings, dim=0)
+        # expand image embeddings according to caption counts
+        image_embeddings = image_embeddings.repeat_interleave(
+            torch.tensor(caption_counts, device=image_embeddings.device), dim=0
+        )
 
     assert caption_embeddings.shape == image_embeddings.shape, (
         f"Caption embeddings shape {caption_embeddings.shape} does not match "
         f"image embeddings shape {image_embeddings.shape}"
     )
 
-    caption_embeddings = caption_embeddings.cpu()  # pyright: ignore
-    image_embeddings = image_embeddings.cpu()  # pyright: ignore
+    caption_embeddings = caption_embeddings.cpu()
+    image_embeddings = image_embeddings.cpu()
     # save to disk to load later for computing OT transport plan during training
     torch.save(image_embeddings, image_save_file_path)
     torch.save(caption_embeddings, caption_save_file_path)
