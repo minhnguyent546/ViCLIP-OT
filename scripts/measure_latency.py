@@ -199,6 +199,88 @@ class SigLIPWrapper(EmbeddingModelWrapper):
         return embeddings
 
 
+class NLLBCLipWrapper(EmbeddingModelWrapper):
+    _SUPPORTED_MODELS = [
+        "nllb-clip-large-siglip:v1",
+    ]
+
+    def __init__(
+        self,
+        model_name: str = "nllb-clip-large-siglip:v1",
+        device: str | torch.device = "auto",
+        language: str = "vie_Latn",
+        max_length: int = 62,
+        normalize_embeddings: bool = True,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            model_name=model_name,
+            device=device,
+            normalize_embeddings=normalize_embeddings,
+        )
+
+        from open_clip import create_model_from_pretrained, get_tokenizer
+
+        if ":" in model_name:
+            model_name, pretrained = model_name.split(":")
+        else:
+            model_name = model_name
+            pretrained = None
+
+        logger.info(
+            f"Using model: {model_name} with pretrained weights: {pretrained} via OpenCLIP"
+        )
+        self.model, self.transform = create_model_from_pretrained(  # pyright: ignore
+            model_name=model_name, pretrained=pretrained, device=device
+        )
+        self.model.eval()
+        self.tokenizer = get_tokenizer(model_name)
+        self.tokenizer.set_language(language)  # pyright: ignore[reportAttributeAccessIssue]
+
+        self.max_length = max_length
+
+    @torch.inference_mode()
+    def encode_captions(self, captions: list[str], batch_size: int = 32) -> Tensor:
+        embeddings = []
+        for i in range(0, len(captions), batch_size):
+            batch_inputs = self.tokenizer(
+                captions[i : i + batch_size],
+            ).to(self.device)
+
+            batch_embeddings = self.model.encode_text(  # pyright: ignore[reportCallIssue]
+                batch_inputs, normalize=self.normalize_embeddings
+            )
+            embeddings.extend(batch_embeddings)
+
+        embeddings = torch.stack(embeddings, dim=0)
+        if self.normalize_embeddings:
+            embeddings = F.normalize(embeddings, p=2, dim=1)
+
+        return embeddings
+
+    @torch.inference_mode()
+    def encode_images(
+        self, images: list[str | Path | Image.Image], batch_size: int = 32
+    ) -> Tensor:
+        embeddings = []
+        for i in range(0, len(images), batch_size):
+            batch_image_tensors = torch.stack(
+                [self.transform(load_rgb_image(image)) for image in images[i : i + batch_size]]
+            ).to(self.device)
+
+            batch_embeddings = self.model.encode_image(  # pyright: ignore[reportCallIssue]
+                batch_image_tensors,
+                normalize=self.normalize_embeddings,
+            )
+            embeddings.extend(batch_embeddings)
+
+        embeddings = torch.stack(embeddings, dim=0)
+        if self.normalize_embeddings:
+            embeddings = F.normalize(embeddings, p=2, dim=1)
+
+        return embeddings
+
+
 class JinaWrapper(EmbeddingModelWrapper):
     _SUPPORTED_MODELS = ["jinaai/jina-embeddings-v4", "jinaai/jina-clip-v2"]
 
@@ -407,6 +489,8 @@ def measure_latency(args: argparse.Namespace) -> None:
     }
     if args.model_family == "qwen3-vl-embedding":
         kwargs["instruction"] = args.instruction
+    elif args.model_family == "nllb-clip":
+        kwargs["language"] = ("vie_Latn",)
 
     logger.info(f"Loading wrapper for {args.model_family}...")
     model_wrapper = create_model_wrapper(args.model_family, **kwargs)
@@ -453,6 +537,8 @@ def create_model_wrapper(family: str, **kwargs: Any) -> EmbeddingModelWrapper:
     family = family.lower()
     if family in {"msiglip"}:
         return SigLIPWrapper(**kwargs)
+    if family in {"nllb-clip"}:
+        return NLLBCLipWrapper(**kwargs)
     if family in {"jina-clip-v2", "jina-embeddings-v4"}:
         return JinaWrapper(**kwargs)
     if family in {"qwen3-vl-embedding"}:
@@ -540,6 +626,7 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         type=str,
         choices=[
             "msiglip",
+            "nllb-clip",
             "jina-clip-v2",
             "jina-embeddings-v4",
             "qwen3-vl-embedding",

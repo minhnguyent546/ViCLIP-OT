@@ -36,6 +36,19 @@ uv run python scripts/measure_latency.py \
     --warmup_images "$WARMUP_IMAGES" \
     --warmup_captions "$WARMUP_CAPTIONS"
 
+# nllb-clip-large-siglip
+uv run python scripts/measure_latency.py \
+    --model_family 'nllb-clip' \
+    --model_name 'nllb-clip-large-siglip:v1' \
+    --dataset_dir "$DATASET_DIR" \
+    --metadata_json_file "$METADATA_JSON_FILE" \
+    --output_csv "$OUTPUT_CSV" \
+    --device "$DEVICE" \
+    --dtype "$DTYPE" \
+    --batch_size 32 \
+    --warmup_images "$WARMUP_IMAGES" \
+    --warmup_captions "$WARMUP_CAPTIONS"
+
 # jina-clip-v2 (jina-clip-v2 uses FA2 by default)
 uv run python scripts/measure_latency.py \
     --model_family 'jina-clip-v2' \
