@@ -490,7 +490,7 @@ def measure_latency(args: argparse.Namespace) -> None:
     if args.model_family == "qwen3-vl-embedding":
         kwargs["instruction"] = args.instruction
     elif args.model_family == "nllb-clip":
-        kwargs["language"] = ("vie_Latn",)
+        kwargs["language"] = "vie_Latn"
 
     logger.info(f"Loading wrapper for {args.model_family}...")
     model_wrapper = create_model_wrapper(args.model_family, **kwargs)
