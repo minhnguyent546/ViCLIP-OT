@@ -537,8 +537,8 @@ The following image shows UMAP visualization of image and text embeddings on the
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/minhnguyent546/viclip_ot.git
-   cd viclip_ot
+   git clone https://github.com/minhnguyent546/ViCLIP-OT.git
+   cd ViCLIP-OT
    ```
 
 2. **Set up Python environment using uv:**
