@@ -1,3 +1,5 @@
+# pyright: reportPrivateImportUsage=false
+
 import contextlib
 from typing import Literal
 
@@ -221,7 +223,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         self,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn_unbalanced",
         use_transport_plan_as_logits: bool = False,
-        sim_matrix_temperature: float = 0.05,
+        sim_matrix_temperature: float | None = 0.05,
     ):
         """
         In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,
@@ -234,7 +236,9 @@ class BatchLevelEntropicOTLoss(nn.Module):
         super().__init__()
         self.sinkhorn_solver = sinkhorn_solver
         self.use_transport_plan_as_logits = use_transport_plan_as_logits
-        self.sim_matrix_scale_factor = 1 / sim_matrix_temperature
+        self.sim_matrix_scale_factor: float | None = None
+        if sim_matrix_temperature is not None and sim_matrix_temperature > 0:
+            self.sim_matrix_scale_factor = 1.0 / sim_matrix_temperature
 
         print(f"Using Sinkhorn Solver: {self.sinkhorn_solver}")
 
@@ -359,7 +363,11 @@ class BatchLevelEntropicOTLoss(nn.Module):
         if sim_matrix is not None:
             #  Generalized KL Divergence (transport_plan || sim_matrix)
             # NOTE: note that this is reverse KL divergence
-            sim_matrix = (self.sim_matrix_scale_factor * sim_matrix).softmax(dim=1)
+            if self.sim_matrix_scale_factor is not None:
+                sim_matrix = (self.sim_matrix_scale_factor * sim_matrix).softmax(dim=1)
+            else:
+                sim_matrix = sim_matrix.softmax(dim=1)
+
             loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
             loss_t2i = (
                 transport_plan.t() * (transport_plan.t().log() - sim_matrix.t().log() - 1)
@@ -439,7 +447,7 @@ class HybridClipTPLoss(nn.Module):
         clip_loss_lambda: float = 0.1,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
         use_transport_plan_as_logits: bool = False,
-        sim_matrix_temperature: float = 0.05,
+        sim_matrix_temperature: float | None = 0.05,
     ):
         """
         In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,
@@ -507,7 +515,7 @@ class HybridSigLipTPLoss(nn.Module):
         sig_lip_loss_lambda: float = 0.1,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
         use_transport_plan_as_logits: bool = False,
-        sim_matrix_temperature: float = 0.05,
+        sim_matrix_temperature: float | None = 0.05,
     ):
         """
         In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,

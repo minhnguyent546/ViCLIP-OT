@@ -2,6 +2,13 @@ import argparse
 import os
 
 
+def _float_or_none(value: str) -> float | None:
+    """Parse a CLI value into a float, mapping 'none'/'null' to None."""
+    if value.strip().lower() in {"none", "null"}:
+        return None
+    return float(value)
+
+
 def add_training_opts(parser: argparse.ArgumentParser) -> None:
     """
     All options used for training the model.
@@ -142,8 +149,8 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
     )
     group.add_argument(
         "--sim_matrix_temperature",
-        type=float,
-        help="Temperature for scaling the similarity matrix when computing OT losses",
+        type=_float_or_none,
+        help="Temperature for scaling the similarity matrix when computing OT losses. Use `--sim_matrix_temperature none` for no scaling.",
         default=0.05,
     )
     group.add_argument(
