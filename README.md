@@ -546,8 +546,12 @@ The following image shows UMAP visualization of image and text embeddings on the
    # Install uv if you haven't already
    curl -LsSf https://astral.sh/uv/install.sh | sh
 
-   # Install dependencies
-   uv sync
+   # Install dependencies.
+   UV_TORCH_BACKEND=cu128 uv sync
+
+   # Optional: install vLLM (needed by the Qwen3-VL-Embedding script's
+   # default vLLM backend). Skip this if you don't precompute embeddings.
+   UV_TORCH_BACKEND=cu128 uv sync --group vllm
 
    # Activate virtual environment
    source .venv/bin/activate
@@ -609,15 +613,19 @@ Refer to [scripts/remove_near_duplicates](./scripts/remove_near_duplicates) for 
 To precompute image and caption embeddings using Qwen3-VL-Embedding-2B, you can run the following commands:
 
 ```bash
+# vLLM is recommended for faster inference speed. If you don't want to use vLLM,
+# you can remove the `--backend vllm` argument or change it to `--backend transformers`.
 python scripts/compute_embeddings_qwen3_vl_embedding.py \
   --model Qwen/Qwen3-VL-Embedding-2B \
   --instruction "Retrieve images or text relevant to the user's query" \
   --dtype bfloat16 \
+  --backend vllm \
   --dataset_dir ./data/UIT-OpenViIC \
   --metadata_json_file train.json \
-  --batch_size 32 \
+  --batch_size_text 32 \
+  --batch_size_image 32 \
   --normalize
- ```
+```
 
 ### 4.3 Training
 
