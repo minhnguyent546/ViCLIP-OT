@@ -1,6 +1,7 @@
 import argparse
 import os
 import random
+import subprocess
 from typing import Any
 
 import fvcore.nn
@@ -176,3 +177,30 @@ def load_yaml_file(file_path: str) -> dict[str, Any]:
         data = yaml.safe_load(f)
 
     return data
+
+
+def get_git_info() -> dict[str, str]:
+    info = {}
+    try:
+        git_repository = subprocess.check_output(
+            ["git", "config", "--get", "remote.origin.url"], text=True
+        ).strip()
+        info["repository"] = git_repository
+    except Exception:
+        pass
+
+    try:
+        git_commit_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        info["commit_hash"] = git_commit_hash
+    except Exception:
+        pass
+
+    try:
+        git_branch = subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], text=True
+        ).strip()
+        info["branch"] = git_branch
+    except Exception:
+        pass
+
+    return info

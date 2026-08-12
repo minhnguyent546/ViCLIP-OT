@@ -1,5 +1,6 @@
 import argparse
 import os
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -7,6 +8,7 @@ from typing import Literal
 
 import torch
 import torch.nn as nn
+import torch.version
 import torchvision.transforms.v2 as v2
 import wandb
 from torch.utils.data import DataLoader
@@ -49,8 +51,29 @@ def train_model(args: argparse.Namespace) -> None:
         else:
             log_file = os.path.join(checkpoint_dir, "train.log")
 
+    # init logger
     logger_init_config = init_logger(level="DEBUG", log_file=log_file, compact=True)
+
+    # set random seed
     utils.set_seed(args.seed)
+
+    # log system information and args
+    git_info = utils.get_git_info()
+    if git_info.get("repository") is not None:
+        logger.info(f"Git repository: {git_info['repository']}")
+    if git_info.get("commit_hash") is not None:
+        logger.info(f"Git commit hash: {git_info['commit_hash'][:7]}")
+    if git_info.get("branch") is not None:
+        logger.info(f"Git branch: {git_info['branch']}")
+    logger.info(f"Python version: {sys.version}")
+    logger.info(
+        f"Pytorch version {torch.version.__version__} compiled for CUDA {torch.version.cuda}"
+    )
+    logger.info(
+        subprocess.run(
+            ["nvidia-smi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        ).stdout
+    )
     logger.info(f"Seed: {args.seed}")
     logger.info(f"Args: {args}")
     logger.info(f"Effective batch size: {args.train_batch_size * args.gradient_accum_steps}")
