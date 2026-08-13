@@ -2,7 +2,7 @@
 
 export WANDB_API_KEY='<YOUR_WANDB_API_KEY_HERE>'
 
-uv run python -m viclip_ot.train \
+uv run --no-sync python -m viclip_ot.train \
   --optimizer adamw \
   --adam_eps 1e-10 \
   --seed 42 \
