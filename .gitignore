@@ -11,7 +11,11 @@ __pycache__
 _*
 !__init__.py
 /checkpoints
+/c
 *.local
+/hf
+.jupyter/
+.jupyter_ystore.db
 
 # datasets
 /data
