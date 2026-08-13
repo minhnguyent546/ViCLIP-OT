@@ -204,3 +204,50 @@ def get_git_info() -> dict[str, str]:
         pass
 
     return info
+
+
+_nvml_handle = None
+_nvml_init_attempted = False
+
+
+def _get_nvml_handle(device_index: int):
+    """Initialize NVML once and cache the device handle for the process lifetime."""
+    global _nvml_handle, _nvml_init_attempted
+    if _nvml_init_attempted:
+        return _nvml_handle
+
+    _nvml_init_attempted = True
+    try:
+        import pynvml
+
+        pynvml.nvmlInit()
+        _nvml_handle = pynvml.nvmlDeviceGetHandleByIndex(device_index)
+    except Exception:
+        _nvml_handle = None
+    return _nvml_handle
+
+
+def get_gpu_memory_stats(device: torch.device) -> dict[str, float]:
+    """Return GPU memory usage in MiB from PyTorch (allocator) and NVML (nvidia-smi)."""
+    stats: dict[str, float] = {}
+    if device.type != "cuda":
+        return stats
+
+    stats["allocated_mib"] = torch.cuda.memory_allocated(device) / (1024**2)
+    stats["reserved_mib"] = torch.cuda.memory_reserved(device) / (1024**2)
+    stats["peak_allocated_mib"] = torch.cuda.max_memory_allocated(device) / (1024**2)
+    stats["peak_reserved_mib"] = torch.cuda.max_memory_reserved(device) / (1024**2)
+
+    nvml_handle = _get_nvml_handle(device.index)
+    if nvml_handle is None:
+        stats["nvml_used_mib"] = -1.0
+        stats["nvml_total_mib"] = -1.0
+        return stats
+
+    import pynvml
+
+    memory_info = pynvml.nvmlDeviceGetMemoryInfo(nvml_handle)
+    assert isinstance(memory_info.used, int) and isinstance(memory_info.total, int)
+    stats["nvml_used_mib"] = memory_info.used / (1024**2)
+    stats["nvml_total_mib"] = memory_info.total / (1024**2)
+    return stats
