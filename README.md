@@ -1,4 +1,4 @@
-# ViCLIP-OT &mdash; The First Foundation Vision-Language Model for Vietnamese Image–Text Retrieval with Optimal Transport
+# ViCLIP-OT: A Structure-Aware Vision-Language Model for Vietnamese Image-Text Retrieval
 
 <p>
   <a href="https://arxiv.org/abs/2602.22678"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-2602.22678-b31b1b.svg?style=flat"></a>
@@ -15,14 +15,14 @@
   <img src="./assets/ViCLIP_OT.jpg" alt="ViCLIP-OT" width="768px">
 </p>
 
-> **Abstract:** Image-text retrieval has become a fundamental component in intelligent multimedia systems; however, most existing vision-language models are optimized for high-resource languages and remain suboptimal for low-resource settings such as Vietnamese. This work introduces ViCLIP-OT, a foundation vision-language model specifically designed for Vietnamese image-text retrieval. The proposed framework integrates CLIP-style contrastive learning with a Similarity-Graph Regularized Optimal Transport (SIGROT) loss to enhance global cross-modal consistency and mitigate modality gap issues. Extensive experiments on three Vietnamese benchmarks (UIT-OpenViIC, KTVIC, and Crossmodal-3600) demonstrate that ViCLIP-OT consistently outperforms CLIP and SigLIP baselines in both in-domain and zero-shot settings. On UIT-OpenViIC, the model achieves an average Recall@K of 67.34\%, improving upon CLIP by 5.75 percentage points. In zero-shot evaluation on Crossmodal-3600, ViCLIP-OT surpasses CLIP by 11.72 percentage points. Embedding-space analysis further confirms improved alignment and reduced modality gap. The results indicate that integrating SIGROT provides an effective and scalable strategy for cross-modal retrieval in low-resource languages, offering practical implications for intelligent multimedia retrieval systems in Vietnamese and other underrepresented linguistic contexts.
+> **Abstract:** Image-text retrieval is a central task in vision-language learning, yet existing large-scale models remain strongly biased toward high-resource languages. Vietnamese, in particular, lacks both large-scale aligned image-text corpora and retrieval models specifically optimized for its linguistic characteristics. This paper proposes **ViCLIP-OT**, a Vietnamese vision-language retrieval model that combines contrastive representation learning with a structure-aware optimal transport regularizer. The core component of the framework is the Similarity-Graph Regularized Optimal Transport (**SIGROT**) loss, which constructs batch-wise relational similarity graphs from pretrained embeddings and aligns image and text distributions through an unbalanced optimal transport plan. Unlike standard contrastive objectives that mainly enforce instance-level discrimination, SIGROT promotes global cross-modal consistency by preserving neighborhood structures within a training batch. The proposed framework is instantiated with a DINOv3-based visual encoder and a Vietnamese Sentence-BERT textual encoder, and is evaluated on three Vietnamese image-text retrieval benchmarks: UIT-OpenViIC, KTVIC, and Crossmodal-3600. Experimental results show that ViCLIP-OT consistently improves over CLIP and SigLIP baselines in both in-domain and zero-shot settings. On UIT-OpenViIC, ViCLIP-OT improves the average Recall@K over CLIP by 5.75 percentage points, while on Crossmodal-3600 it yields an 11.72-point zero-shot improvement. Embedding-space analysis further demonstrates that SIGROT improves cross-modal alignment and reduces the modality gap. These results indicate that similarity-graph regularized optimal transport is an effective and scalable mechanism for low-resource vision-language retrieval.
 
 ---
 
 Table of Contents
 =================
 
-- [ViCLIP-OT — The First Foundation Vision-Language Model for Vietnamese Image–Text Retrieval with Optimal Transport](#viclip-ot--the-first-foundation-vision-language-model-for-vietnamese-imagetext-retrieval-with-optimal-transport)
+- [ViCLIP-OT: A Structure-Aware Vision-Language Model for Vietnamese Image-Text Retrieval](#viclip-ot-a-structure-aware-vision-language-model-for-vietnamese-image-text-retrieval)
 - [Table of Contents](#table-of-contents)
   - [Highlights](#highlights)
   - [News](#news)
@@ -668,7 +668,7 @@ This project is licensed under the GNU General Public License v3.0 (GPL-3.0). Se
 
 ## 6. Citing
 
-If you find ViCLIP-OT useful in your research, please cite the following paper:
+If you find `ViCLIP-OT` useful in your research, please cite the following paper:
 ```bibtex
 @misc{tran2026viclipotfoundationvisionlanguagemodel,
     title={ViCLIP-OT: The First Foundation Vision-Language Model for Vietnamese Image-Text Retrieval with Optimal Transport},
