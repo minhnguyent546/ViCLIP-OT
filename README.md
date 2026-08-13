@@ -615,7 +615,7 @@ To precompute image and caption embeddings using Qwen3-VL-Embedding-2B, you can 
 ```bash
 # vLLM is recommended for faster inference speed. If you don't want to use vLLM,
 # you can remove the `--backend vllm` argument or change it to `--backend transformers`.
-python scripts/compute_embeddings_qwen3_vl_embedding.py \
+python scripts/compute-embeddings/compute_embeddings_qwen3_vl_embedding.py \
   --model Qwen/Qwen3-VL-Embedding-2B \
   --instruction "Retrieve images or text relevant to the user's query" \
   --dtype bfloat16 \
@@ -631,20 +631,20 @@ python scripts/compute_embeddings_qwen3_vl_embedding.py \
 
 To train the model, you can run the following command:
 ```bash
-bash scripts/train_viclip_ot.sh
+bash scripts/train/train_viclip_ot.sh
 
-# Refer to scripts/ for other training scripts:
-# bash scripts/train_visiglip_ot.sh
-# bash scripts/train_clip.sh
-# bash scripts/train_siglip.sh
-# bash scripts/train_sigrot.sh
+# Refer to scripts/train/ for other training scripts:
+# bash scripts/train/train_visiglip_ot.sh
+# bash scripts/train/train_clip.sh
+# bash scripts/train/train_siglip.sh
+# bash scripts/train/train_sigrot.sh
 ```
 
 ### 4.4 Inference
 
 You can run inference using our pretrained checkpoint as follows:
 ```bash
-hf download minhnguyent546/ViCLIP-OT-checkpoints \
+uvx hf download minhnguyent546/ViCLIP-OT-checkpoints \
     --local-dir checkpoints \
     --include visiglip_ot/visiglip_ot.pth
 ```
