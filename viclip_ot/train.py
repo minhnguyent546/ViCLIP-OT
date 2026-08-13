@@ -616,7 +616,9 @@ def train_model(args: argparse.Namespace) -> None:
     # disable logging to stdout during training to avoid conflict with tqdm
     logger.remove(logger_init_config["stdout_id"])
     global_step = 0
-    training_start_time = time.perf_counter()
+    total_training_only_time = 0.0
+    total_eval_time = 0.0
+    total_training_samples = 0
     for epoch in range(args.num_epochs):
         model.train()
         criterion_kwargs = {}
@@ -641,6 +643,7 @@ def train_model(args: argparse.Namespace) -> None:
         train_loss = AverageMeter(name="train_loss", fmt=":0.4f")
 
         for update_step in train_progressbar:
+            step_start_time = time.perf_counter()
             num_batches = (
                 args.gradient_accum_steps
                 if update_step + 1 < num_updates_per_epoch
@@ -834,6 +837,10 @@ def train_model(args: argparse.Namespace) -> None:
             scaler.update()
             optimizer.zero_grad()
 
+            step_elapsed = time.perf_counter() - step_start_time
+            total_training_only_time += step_elapsed
+            total_training_samples += num_items_in_batch
+
             # note: we clamp to 4.6052 = ln(100), as in the original paper.
             with torch.no_grad():
                 # model.logit_scale.clamp_(min=0, max=np.log(100))
@@ -864,17 +871,24 @@ def train_model(args: argparse.Namespace) -> None:
                     main_lr_scheduler.step()
 
             if (update_step + 1) % args.log_file_interval == 0:
-                memory_used = (
-                    torch.cuda.max_memory_allocated(device) / (1024.0 * 1024.0)
-                    if device.type == "cuda"
-                    else 0
-                )
+                samples_per_sec = num_items_in_batch / step_elapsed if step_elapsed > 0 else 0.0
+                memory_suffix = ""
+                if device.type == "cuda":
+                    memory_stats = utils.get_gpu_memory_stats(device)
+                    memory_suffix = (
+                        f"\tmem_alloc={memory_stats['allocated_mib']:.1f}"
+                        f"({memory_stats['peak_allocated_mib']:.1f} peak) MiB"
+                        f"\tmem_reserved={memory_stats['reserved_mib']:.1f}"
+                        f"({memory_stats['peak_reserved_mib']:.1f} peak) MiB"
+                        f"\tnvidia-smi={memory_stats['nvml_used_mib']:.1f} MiB"
+                    )
                 logger.info(
                     f"Train: [{epoch + 1}/{args.num_epochs}][{update_step + 1}/{num_updates_per_epoch}]\t"
                     f"loss: {batch_loss:0.4f}\t"
                     f"grad_norm: {grad_norm_value:0.4f}\t"
                     f"logit_scale: {model.logit_scale.exp().item():0.4f}\t"
-                    f"memory: {memory_used:0.2f} MB"
+                    f"step: {step_elapsed * 1000:0.1f} ms\t"
+                    f"samples/s: {samples_per_sec:0.1f}{memory_suffix}"
                 )
 
             train_loss.update(batch_loss, num_items_in_batch)
@@ -896,6 +910,7 @@ def train_model(args: argparse.Namespace) -> None:
             )
 
         # validation
+        eval_start_time = time.perf_counter()
         val_results = eval_model(
             model=model,
             criterion=eval_criterion,
@@ -911,8 +926,9 @@ def train_model(args: argparse.Namespace) -> None:
             wandb_run=wandb_run,
             wandb_log_step=global_step,
         )
+        total_eval_time += time.perf_counter() - eval_start_time
 
-        # testing
+        # testing (excluded from timing)
         test_results = eval_model(
             model=model,
             criterion=eval_criterion,
@@ -966,8 +982,24 @@ def train_model(args: argparse.Namespace) -> None:
         format=logger_init_config["fmt"],
         level=logger_init_config["level"],
     )
-    total_training_time = time.perf_counter() - training_start_time
-    logger.info(f"Training time: {utils.to_hms(total_training_time)}")
+    logger.info(f"Training-only time: {utils.to_hms(total_training_only_time)}")
+    logger.info(f"Evaluation (validation) time: {utils.to_hms(total_eval_time)}")
+    logger.info(
+        f"Total time (training + validation): "
+        f"{utils.to_hms(total_training_only_time + total_eval_time)}"
+    )
+    if total_training_only_time > 0:
+        logger.info(
+            f"  Training throughput: "
+            f"{total_training_samples / total_training_only_time:0.1f} samples/s"
+        )
+    if device.type == "cuda":
+        memory_stats = utils.get_gpu_memory_stats(device)
+        logger.info(
+            f"  Peak GPU memory: allocated={memory_stats['peak_allocated_mib']:.1f} MiB,"
+            f" reserved={memory_stats['peak_reserved_mib']:.1f} MiB,"
+            f" nvidia-smi={memory_stats['nvml_used_mib']:.1f} MiB"
+        )
 
     if len(best_val_results.keys()) == 1:
         best_metric_key = list(best_val_results.keys())[0]
