@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-export WANDB_API_KEY='<YOUR_WANDB_API_KEY_HERE>'
+# export WANDB_API_KEY='<YOUR_WANDB_API_KEY_HERE>'
 
 uv run --no-sync python -m viclip_ot.train \
   --optimizer adamw \
