@@ -50,6 +50,10 @@ dev = [
     "peft>=0.18.1",
     "qwen-vl-utils>=0.0.14",
     "sentencepiece>=0.2.1",
+    "ipywidgets>=8.1.8",
+    "notebook>=7.6.2",
+    "jupyterlab>=4.6.3",
+    "jupyter-collaboration>=5.0.0",
 ]
 vllm = [
     "vllm==0.16.0",
