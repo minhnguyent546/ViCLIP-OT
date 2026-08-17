@@ -8,6 +8,33 @@ import torch.nn.functional as Fun
 from torch import Tensor
 
 
+def generalized_kl_div(
+    input: Tensor,
+    target: Tensor,
+    reduction: str = "batchmean",
+) -> Tensor:
+    """Generalized KL ``KL_gen(input || target) = sum(a log(a/b) - a + b)``.
+
+    Both args are nonnegative masses in linear space. Reductions follow the
+    math-correct ``F.kl_div`` options only: ``none`` / ``sum`` / ``batchmean``
+    (``/ batch_size``). The legacy ``mean`` (``/ numel``) is omitted on purpose.
+    Unlike ``F.kl_div``, ``input`` is not log-space and the direction is
+    ``KL(input || target)`` (transport plan || graph prior).
+    """
+    # a * log(a/b) - a + b
+    pointwise = input * (input.log() - target.log() - 1) + target
+
+    if reduction == "none":
+        return pointwise
+    if reduction == "sum":
+        return pointwise.sum()
+    if reduction == "batchmean":
+        return pointwise.sum() / input.shape[0]
+    raise ValueError(
+        f"Unsupported reduction: {reduction}. Expected one of ['none', 'sum', 'batchmean']."
+    )
+
+
 class ClipLoss(nn.Module):
     """(Open) CLIP loss.
 
