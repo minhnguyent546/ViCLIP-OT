@@ -257,7 +257,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
         self,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn_unbalanced",
         use_transport_plan_as_logits: bool = False,
-        sim_matrix_temperature: float | None = 0.05,
+        sim_matrix_temperature: float | None = None,
     ):
         """
         In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,
@@ -406,11 +406,10 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 raise ValueError(
                     f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
                 )
-            # if self.sim_matrix_scale_factor is not None:
-            #     graph_prior = (self.sim_matrix_scale_factor * sim_matrix).softmax(dim=1)
-            # else:
-            #     graph_prior = sim_matrix.softmax(dim=1)
-            graph_prior = (logit_scale * sim_matrix).softmax(dim=1)
+            if self.sim_matrix_scale_factor is not None:
+                graph_prior = (self.sim_matrix_scale_factor * sim_matrix).softmax(dim=1)
+            else:
+                graph_prior = (logit_scale * sim_matrix).softmax(dim=1)
 
             loss_i2t = generalized_kl_div(
                 input=transport_plan,
@@ -489,7 +488,7 @@ class HybridClipTPLoss(nn.Module):
         clip_loss_lambda: float = 0.1,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
         use_transport_plan_as_logits: bool = False,
-        sim_matrix_temperature: float | None = 0.05,
+        sim_matrix_temperature: float | None = None,
     ):
         """
         In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,
@@ -565,7 +564,7 @@ class HybridSigLipTPLoss(nn.Module):
         sig_lip_loss_lambda: float = 0.1,
         sinkhorn_solver: Literal["sinkhorn", "sinkhorn_unbalanced"] = "sinkhorn",
         use_transport_plan_as_logits: bool = False,
-        sim_matrix_temperature: float | None = 0.05,
+        sim_matrix_temperature: float | None = None,
     ):
         """
         In case `sim_matrix` is not provided in the forward pass: If `use_transport_plan_as_logits` is True,

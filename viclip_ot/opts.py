@@ -151,7 +151,7 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         "--sim_matrix_temperature",
         type=_float_or_none,
         help="Temperature for scaling the similarity matrix when computing OT losses. Use `--sim_matrix_temperature none` for no scaling.",
-        default=0.05,
+        default=None,
     )
     group.add_argument(
         "--sinkhorn_solver",
