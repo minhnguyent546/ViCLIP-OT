@@ -30,6 +30,7 @@ uv run --no-sync python -m viclip_ot.train \
   --lr_warmup_method linear \
   --best_checkpoint_metrics t2i_R__1 \
   --save_best_k 5 \
+  --save_best_k_only \
   --max_grad_norm 1.0 \
   --wandb_logging \
   --wandb_project viclip_ot \

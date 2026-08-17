@@ -1019,7 +1019,8 @@ def train_model(args: argparse.Namespace) -> None:
             "epoch": epoch,
             "global_step": global_step,
         }
-        torch.save(state_dict_to_save, checkpoint_path)
+        if not args.save_best_k_only:
+            torch.save(state_dict_to_save, checkpoint_path)
         save_top_k_checkpoints(
             criterion_metrics=args.best_checkpoint_metrics,
             top_k=args.save_best_k,
