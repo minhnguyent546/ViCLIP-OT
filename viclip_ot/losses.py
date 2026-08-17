@@ -382,27 +382,28 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 raise ValueError(f"Unsupported solver: {self.sinkhorn_solver}")
 
         if sim_matrix is not None:
-            #  Generalized KL Divergence (transport_plan || sim_matrix)
-            # NOTE: note that this is reverse KL divergence
-            # TODO: find a better way to scale sim_matrix for stable training other than using `logit_scale`
-            sim_matrix = (logit_scale * sim_matrix).softmax(dim=1)
-            loss_i2t = transport_plan * (transport_plan.log() - sim_matrix.log() - 1) + sim_matrix
-            loss_t2i = (
-                transport_plan.t() * (transport_plan.t().log() - sim_matrix.t().log() - 1)
-                + sim_matrix.t()
-            )
+            # GKL(T || P_G) and GKL(T^T || P_G); same pair-indexed prior both ways.
+            # TODO: better scaling for sim_matrix than logit_scale.
+            # Module "mean" maps to "batchmean" (sum / batch_size).
             if reduction == "mean":
-                loss_i2t = loss_i2t.sum() / batch_size
-                loss_t2i = loss_t2i.sum() / batch_size
-            elif reduction == "sum":
-                loss_i2t = loss_i2t.sum()
-                loss_t2i = loss_t2i.sum()
-            elif reduction == "none":
-                pass
+                gkl_reduction = "batchmean"
+            elif reduction in ("sum", "none"):
+                gkl_reduction = reduction
             else:
                 raise ValueError(
                     f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
                 )
+            graph_prior = (logit_scale * sim_matrix).softmax(dim=1)
+            loss_i2t = generalized_kl_div(
+                input=transport_plan,
+                target=graph_prior,
+                reduction=gkl_reduction,
+            )
+            loss_t2i = generalized_kl_div(
+                input=transport_plan.t(),
+                target=graph_prior,
+                reduction=gkl_reduction,
+            )
         else:
             device = image_features.device
             if self.use_transport_plan_as_logits:
