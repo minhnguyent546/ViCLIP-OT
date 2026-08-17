@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torchvision
 from torch import Tensor
+from torch.utils.checkpoint import get_device_states, set_device_states
 from torch.utils.data import DataLoader
 from torchvision.ops.misc import FrozenBatchNorm2d
 from tqdm.autonotebook import tqdm
@@ -17,6 +18,24 @@ from wandb.sdk.wandb_run import Run as WandbRun
 
 from viclip_ot.utils.logger import logger
 from viclip_ot.utils.metric import AverageMeter
+
+
+class RandContext:
+    """Snapshot/restore RNG so the GradCache second forward matches the first (dropout)."""
+
+    def __init__(self, *tensors: Tensor) -> None:
+        self.fwd_cpu_state = torch.get_rng_state()
+        self.fwd_gpu_devices, self.fwd_gpu_states = get_device_states(*tensors)
+
+    def __enter__(self) -> None:
+        self._fork = torch.random.fork_rng(devices=self.fwd_gpu_devices, enabled=True)
+        self._fork.__enter__()
+        torch.set_rng_state(self.fwd_cpu_state)
+        set_device_states(self.fwd_gpu_devices, self.fwd_gpu_states)
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self._fork.__exit__(exc_type, exc_val, exc_tb)
+        self._fork = None
 
 
 class EvalResults(TypedDict):

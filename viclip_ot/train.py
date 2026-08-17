@@ -1,3 +1,5 @@
+# pyright: reportPrivateImportUsage=false
+
 import argparse
 import os
 import subprocess
@@ -11,6 +13,7 @@ import torch.nn as nn
 import torch.version
 import torchvision.transforms.v2 as v2
 import wandb
+from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm.autonotebook import tqdm
 
@@ -25,6 +28,7 @@ from viclip_ot.utils.metric import AverageMeter
 from viclip_ot.utils.training import (
     EarlyStopping,
     EvalResults,
+    RandContext,
     eval_model,
     get_parameter_names,
     maybe_log_eval_results,
@@ -730,22 +734,34 @@ def train_model(args: argparse.Namespace) -> None:
                         batch_loss_components.get(name, 0.0) + component_value
                     )
             else:
-                # step 1: cache the features without any gradient tracking (gradient caching).
-                cached_features = {}
+                # GradCache (loss once on full batch; encoder grads via surrogate).
+                moved_batches: list[dict] = []
+                cached_image_features: list[Tensor] = []
+                cached_text_features: list[Tensor] = []
+                random_states: list[RandContext] = []
+
+                # Step 1: no-grad encode each micro-batch; cache features + RNG
+                # (snapshot only — do not wrap this forward in RandContext).
                 with torch.no_grad():
                     for batch in batches:
                         images = batch["images"].to(device=device, non_blocking=True)
                         text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
+                        rnd = RandContext(images, *text_inputs.values())
                         with autocast_context:
                             model_outputs = model(images, text_inputs)
-                            for key in ("logit_scale", "logit_bias"):
-                                model_outputs.pop(key, None)
-                            for key, value in model_outputs.items():
-                                if key not in cached_features:
-                                    cached_features[key] = []
-                                cached_features[key].append(value)
+                        moved_batches.append(
+                            {
+                                "images": images,
+                                "text_inputs": text_inputs,
+                                "image_ids": batch["image_ids"],
+                                "indices": batch["indices"],
+                            }
+                        )
+                        cached_image_features.append(model_outputs["image_features"])
+                        cached_text_features.append(model_outputs["text_features"])
+                        random_states.append(rnd)
 
-                all_image_ids = torch.cat([batch["image_ids"] for batch in batches], dim=0)
+                all_image_ids = torch.cat([batch["image_ids"] for batch in moved_batches], dim=0)
 
                 if (
                     isinstance(
@@ -759,7 +775,7 @@ def train_model(args: argparse.Namespace) -> None:
                     and caption_embeddings is not None
                     and image_embeddings is not None
                 ):
-                    all_indices = [idx for batch in batches for idx in batch["indices"]]
+                    all_indices = [idx for b in moved_batches for idx in b["indices"]]
                     pair_ids = train_data_loader.dataset.get_pair_ids(all_indices)  # pyright: ignore
 
                     sim_matrix_text = (
@@ -783,64 +799,71 @@ def train_model(args: argparse.Namespace) -> None:
 
                     criterion_kwargs["sim_matrix"] = sim_matrix
 
-                accum_num_samples = 0
+                # Step 2: one loss on detached full-batch features → cache ∂L/∂z
+                # (also grads logit_scale / logit_bias; Sinkhorn runs once).
+                image_features = torch.cat(cached_image_features, dim=0).detach().requires_grad_()
+                text_features = torch.cat(cached_text_features, dim=0).detach().requires_grad_()
+                logit_scale = model.logit_scale.exp()
+                logit_bias = model.logit_bias if model.logit_bias is not None else None
 
-                # step 2: re-do the forward pass for those batches, and use the cache features
-                for batch_idx, batch in enumerate(batches):
-                    images = batch["images"].to(device=device, non_blocking=True)
-                    text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
-                    image_ids = batch["image_ids"]
+                with autocast_context:
+                    loss_dict = criterion(
+                        image_features=image_features,
+                        text_features=text_features,
+                        logit_scale=logit_scale,
+                        logit_bias=logit_bias,
+                        image_ids=all_image_ids,
+                        reduction="sum",
+                        output_dict=True,
+                        **criterion_kwargs,
+                    )
+                    loss = sum(loss_dict.values())
+                    if num_items_in_batch > 0:
+                        loss = loss / num_items_in_batch
 
-                    with autocast_context:
-                        model_outputs = model(images, text_inputs)
+                scaler.scale(loss).backward()
 
-                        outputs_no_cached = {}
-                        outputs_no_cached["logit_scale"] = model_outputs.pop("logit_scale")
-                        if "logit_bias" in model_outputs:
-                            outputs_no_cached["logit_bias"] = model_outputs.pop("logit_bias")
+                image_grad_chunks = list(
+                    image_features.grad.split(
+                        [batch["images"].shape[0] for batch in moved_batches]
+                    )
+                )
+                text_grad_chunks = list(
+                    text_features.grad.split([batch["images"].shape[0] for batch in moved_batches])
+                )
 
-                        outputs_for_loss = {}
-                        for key, value in cached_features.items():
-                            outputs_for_loss[key] = torch.cat(
-                                value[:batch_idx] + [model_outputs[key]] + value[batch_idx + 1 :],
+                batch_loss = loss.detach().item()
+                for name, value in loss_dict.items():
+                    component_value = value.detach().item()
+                    if num_items_in_batch > 0:
+                        component_value /= num_items_in_batch
+                    batch_loss_components[name] = component_value
+
+                del image_features, text_features, loss_dict, loss
+                del cached_image_features, cached_text_features
+
+                # Step 3: second encode per micro-batch; surrogate ⟨z, ∂L/∂z⟩ pushes
+                # cached feature grads into the encoder (grads already scaler-scaled).
+                for batch, rnd, image_grad, text_grad in zip(
+                    moved_batches,
+                    random_states,
+                    image_grad_chunks,
+                    text_grad_chunks,
+                    strict=True,
+                ):
+                    with rnd:
+                        with autocast_context:
+                            model_outputs = model(batch["images"], batch["text_inputs"])
+                            surrogate = torch.dot(
+                                model_outputs["image_features"].flatten(),
+                                image_grad.flatten(),
+                            ) + torch.dot(
+                                model_outputs["text_features"].flatten(),
+                                text_grad.flatten(),
                             )
+                    surrogate.backward()
 
-                        loss_dict = criterion(
-                            **outputs_for_loss,
-                            **outputs_no_cached,
-                            image_ids=torch.cat(
-                                [
-                                    all_image_ids[:accum_num_samples],
-                                    image_ids,
-                                    all_image_ids[accum_num_samples + image_ids.size(0) :],
-                                ]
-                            ),
-                            reduction="sum",
-                            output_dict=True,
-                            **criterion_kwargs,
-                        )
-                        del outputs_for_loss
-                        del outputs_no_cached
-
-                        accum_num_samples += image_ids.size(0)
-
-                        loss = sum(loss_dict.values())
-                        if num_items_in_batch > 0:
-                            loss = loss / num_items_in_batch
-
-                    scaler.scale(loss).backward()
-                    # Average micro-batch contributions for logging only; backward already
-                    # used loss / num_items_in_batch (same as the single-batch path).
-                    batch_loss += loss.detach().item() / num_batches
-                    for name, value in loss_dict.items():
-                        component_value = value.detach().item()
-                        if num_items_in_batch > 0:
-                            component_value /= num_items_in_batch
-                        batch_loss_components[name] = (
-                            batch_loss_components.get(name, 0.0) + component_value / num_batches
-                        )
-
-                del cached_features
+                del moved_batches, random_states, image_grad_chunks, text_grad_chunks
 
             grad_norm_value = 0.0
             if args.max_grad_norm > 0:
