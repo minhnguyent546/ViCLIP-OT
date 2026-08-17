@@ -210,19 +210,31 @@ _nvml_handle = None
 _nvml_init_attempted = False
 
 
-def _get_nvml_handle(device_index: int):
-    """Initialize NVML once and cache the device handle for the process lifetime."""
+def _get_nvml_handle(device_index: int | None):
+    """Initialize NVML once and cache the device handle for the process lifetime.
+
+    ``torch.device("cuda")`` has ``index is None`` (current device). NVML needs a
+    concrete ordinal, so fall back to ``torch.cuda.current_device()`` in that case.
+    """
     global _nvml_handle, _nvml_init_attempted
     if _nvml_init_attempted:
         return _nvml_handle
 
     _nvml_init_attempted = True
+    if device_index is None:
+        device_index = torch.cuda.current_device() if torch.cuda.is_available() else 0
     try:
         import pynvml
 
         pynvml.nvmlInit()
         _nvml_handle = pynvml.nvmlDeviceGetHandleByIndex(device_index)
-    except Exception:
+    except Exception as exc:
+        from viclip_ot.utils.logger import logger
+
+        logger.warning(
+            f"Failed to initialize NVML for GPU memory stats (device_index={device_index}): "
+            f"{type(exc).__name__}: {exc}. nvidia-smi memory will be reported as -1.0 MiB."
+        )
         _nvml_handle = None
     return _nvml_handle
 
