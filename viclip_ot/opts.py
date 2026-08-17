@@ -424,7 +424,7 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
     )
     group.add_argument(
         "--save_best_k_only",
-        aciton='store_true',
+        action='store_true',
         help="Save only best k checkpoints",
     )
 
