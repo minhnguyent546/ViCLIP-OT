@@ -661,6 +661,7 @@ def train_model(args: argparse.Namespace) -> None:
             num_batches = len(batches)  # actual number batches retrieved
 
             batch_loss: float = 0.0
+            batch_loss_components: dict[str, float] = {}
 
             if num_batches == 1:
                 images = batches[0]["images"].to(device=device, non_blocking=True)
@@ -705,20 +706,29 @@ def train_model(args: argparse.Namespace) -> None:
 
                 with autocast_context:
                     model_outputs = model(images, text_inputs)
-                    loss = criterion(
+                    loss_dict = criterion(
                         image_features=model_outputs["image_features"],
                         text_features=model_outputs["text_features"],
                         logit_scale=model_outputs["logit_scale"],
                         logit_bias=model_outputs.get("logit_bias", None),
                         image_ids=image_ids,
                         reduction="sum",
+                        output_dict=True,
                         **criterion_kwargs,
                     )
+                    loss = sum(loss_dict.values())
                     if num_items_in_batch > 0:
                         loss = loss / num_items_in_batch
 
                 scaler.scale(loss).backward()
                 batch_loss += loss.detach().item()
+                for name, value in loss_dict.items():
+                    component_value = value.detach().item()
+                    if num_items_in_batch > 0:
+                        component_value /= num_items_in_batch
+                    batch_loss_components[name] = (
+                        batch_loss_components.get(name, 0.0) + component_value
+                    )
             else:
                 # step 1: cache the features without any gradient tracking (gradient caching).
                 cached_features = {}
@@ -795,7 +805,7 @@ def train_model(args: argparse.Namespace) -> None:
                                 value[:batch_idx] + [model_outputs[key]] + value[batch_idx + 1 :],
                             )
 
-                        loss = criterion(
+                        loss_dict = criterion(
                             **outputs_for_loss,
                             **outputs_no_cached,
                             image_ids=torch.cat(
@@ -806,6 +816,7 @@ def train_model(args: argparse.Namespace) -> None:
                                 ]
                             ),
                             reduction="sum",
+                            output_dict=True,
                             **criterion_kwargs,
                         )
                         del outputs_for_loss
@@ -813,11 +824,21 @@ def train_model(args: argparse.Namespace) -> None:
 
                         accum_num_samples += image_ids.size(0)
 
+                        loss = sum(loss_dict.values())
                         if num_items_in_batch > 0:
                             loss = loss / num_items_in_batch
 
                     scaler.scale(loss).backward()
+                    # Average micro-batch contributions for logging only; backward already
+                    # used loss / num_items_in_batch (same as the single-batch path).
                     batch_loss += loss.detach().item() / num_batches
+                    for name, value in loss_dict.items():
+                        component_value = value.detach().item()
+                        if num_items_in_batch > 0:
+                            component_value /= num_items_in_batch
+                        batch_loss_components[name] = (
+                            batch_loss_components.get(name, 0.0) + component_value / num_batches
+                        )
 
                 del cached_features
 
@@ -850,12 +871,21 @@ def train_model(args: argparse.Namespace) -> None:
                 # model.logit_scale.data.clamp_(min=np.log(1/100), max=np.log(100))
                 pass
 
+            # Skip a lone "loss" component (e.g. plain SigLIP) — it duplicates the total.
+            detailed_loss_components = {
+                name: value
+                for name, value in batch_loss_components.items()
+                if not (name == "loss" and len(batch_loss_components) == 1)
+            }
+
             if wandb_run is not None:
                 log_data = {
                     f"learning_rate/group_{param_group.get('name', group_id)}": param_group["lr"]
                     for group_id, param_group in enumerate(optimizer.param_groups)
                 }
                 log_data["train/loss"] = batch_loss
+                for name, value in detailed_loss_components.items():
+                    log_data[f"train/{name}"] = value
                 log_data["train/grad_norm"] = grad_norm_value
                 log_data["train/logit_scale"] = model.logit_scale.exp().item()
                 if model.logit_bias is not None:
@@ -885,9 +915,13 @@ def train_model(args: argparse.Namespace) -> None:
                         f"({memory_stats['peak_reserved_mib']:.1f} peak) MiB"
                         f"\tnvidia-smi={memory_stats['nvml_used_mib']:.1f} MiB"
                     )
+                loss_components_str = "".join(
+                    f"\t{name}: {value:0.4f}" for name, value in detailed_loss_components.items()
+                )
                 logger.info(
                     f"Train: [{epoch + 1}/{args.num_epochs}][{update_step + 1}/{num_updates_per_epoch}]\t"
-                    f"loss: {batch_loss:0.4f}\t"
+                    f"loss: {batch_loss:0.4f}"
+                    f"{loss_components_str}\t"
                     f"grad_norm: {grad_norm_value:0.4f}\t"
                     f"logit_scale: {model.logit_scale.exp().item():0.4f}\t"
                     f"step: {step_elapsed * 1000:0.1f} ms\t"
@@ -898,6 +932,7 @@ def train_model(args: argparse.Namespace) -> None:
             train_progressbar.set_postfix(
                 {
                     "loss": f"{batch_loss:0.4f}",
+                    **{name: f"{value:0.4f}" for name, value in detailed_loss_components.items()},
                     "grad_norm": f"{grad_norm_value:0.4f}",
                 }
             )

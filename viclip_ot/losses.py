@@ -108,9 +108,14 @@ class ClipLoss(nn.Module):
             loss_i2t = Fun.cross_entropy(logits_per_image, soft_labels, reduction=reduction)
             loss_t2i = Fun.cross_entropy(logits_per_text, soft_labels, reduction=reduction)
 
-        total_loss = (loss_i2t + loss_t2i) / 2
-
-        return {"loss": total_loss} if output_dict else total_loss
+        # Half each direction so callers can sum dict values back to the CLIP objective.
+        loss_dict = {
+            "loss_i2t": loss_i2t * 0.5,
+            "loss_t2i": loss_t2i * 0.5,
+        }
+        if output_dict:
+            return loss_dict
+        return loss_dict["loss_i2t"] + loss_dict["loss_t2i"]
 
 
 class SigLipLoss(nn.Module):
@@ -236,7 +241,11 @@ class SigLipLoss(nn.Module):
             reduction=reduction,
         )
 
-        return {"loss": loss} if output_dict else loss
+        # SigLIP is a single pairwise term (no separate i2t/t2i heads).
+        loss_dict = {"loss": loss}
+        if output_dict:
+            return loss_dict
+        return loss_dict["loss"]
 
 
 class BatchLevelEntropicOTLoss(nn.Module):
@@ -459,9 +468,14 @@ class BatchLevelEntropicOTLoss(nn.Module):
                     reduction=reduction,
                 )
 
-        total_loss = (loss_i2t + loss_t2i) / 2
-
-        return {"loss": total_loss} if output_dict else total_loss
+        # Half each direction so callers can sum dict values back to the OT objective.
+        loss_dict = {
+            "loss_i2t": loss_i2t * 0.5,
+            "loss_t2i": loss_t2i * 0.5,
+        }
+        if output_dict:
+            return loss_dict
+        return loss_dict["loss_i2t"] + loss_dict["loss_t2i"]
 
 
 class HybridClipTPLoss(nn.Module):
@@ -507,29 +521,37 @@ class HybridClipTPLoss(nn.Module):
         output_dict: bool = False,
         reduction: str = "mean",
     ):
-        clip_loss_value = self.clip_loss(
+        clip_loss_dict = self.clip_loss(
             image_features=image_features,
             text_features=text_features,
             logit_scale=logit_scale,
             logit_bias=logit_bias,
             image_ids=image_ids,
-            output_dict=False,
+            output_dict=True,
             reduction=reduction,
         )
 
-        ot_loss_value = self.ot_loss(
+        ot_loss_dict = self.ot_loss(
             image_features=image_features,
             text_features=text_features,
             logit_scale=logit_scale,
             logit_bias=logit_bias,
-            output_dict=False,
+            output_dict=True,
             sim_matrix=sim_matrix,
             image_ids=image_ids,
             reduction=reduction,
         )
-        total_loss = self.clip_loss_lambda * clip_loss_value + ot_loss_value
-
-        return {"loss": total_loss} if output_dict else total_loss
+        # Scale CLIP components; keep OT components as-is. Values sum to the hybrid objective.
+        loss_dict = {
+            **{
+                f"clip_{name}": self.clip_loss_lambda * value
+                for name, value in clip_loss_dict.items()
+            },
+            **{f"ot_{name}": value for name, value in ot_loss_dict.items()},
+        }
+        if output_dict:
+            return loss_dict
+        return sum(loss_dict.values())
 
 
 class HybridSigLipTPLoss(nn.Module):
@@ -575,26 +597,34 @@ class HybridSigLipTPLoss(nn.Module):
         output_dict: bool = False,
         reduction: str = "mean",
     ):
-        sig_lip_loss_value = self.sig_lip_loss(
+        sig_lip_loss_dict = self.sig_lip_loss(
             image_features=image_features,
             text_features=text_features,
             logit_scale=logit_scale,
             logit_bias=logit_bias,
             image_ids=image_ids,
-            output_dict=False,
+            output_dict=True,
             reduction=reduction,
         )
 
-        ot_loss_value = self.ot_loss(
+        ot_loss_dict = self.ot_loss(
             image_features=image_features,
             text_features=text_features,
             logit_scale=logit_scale,
             logit_bias=logit_bias,
-            output_dict=False,
+            output_dict=True,
             sim_matrix=sim_matrix,
             image_ids=image_ids,
             reduction=reduction,
         )
-        total_loss = self.sig_lip_loss_lambda * sig_lip_loss_value + ot_loss_value
-
-        return {"loss": total_loss} if output_dict else total_loss
+        # Scale SigLIP components; keep OT components as-is. Values sum to the hybrid objective.
+        loss_dict = {
+            **{
+                f"sig_lip_{name}": self.sig_lip_loss_lambda * value
+                for name, value in sig_lip_loss_dict.items()
+            },
+            **{f"ot_{name}": value for name, value in ot_loss_dict.items()},
+        }
+        if output_dict:
+            return loss_dict
+        return sum(loss_dict.values())
