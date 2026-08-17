@@ -2,6 +2,13 @@ import argparse
 import os
 
 
+def _float_or_none(value: str) -> float | None:
+    """Parse a CLI value into a float, mapping 'none'/'null' to None."""
+    if value.strip().lower() in {"none", "null"}:
+        return None
+    return float(value)
+
+
 def add_training_opts(parser: argparse.ArgumentParser) -> None:
     """
     All options used for training the model.
@@ -139,6 +146,12 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         "--use_transport_plan_as_logits",
         action="store_true",
         help="Whether to use the transport plan as logits for computing cross-entropy loss in batch-level entropic OT loss, otherwise the transport plan is used as soft targets. Note that these two cases will only happen when `--sim_graph_regularized_ot` is not set.",
+    )
+    group.add_argument(
+        "--sim_matrix_temperature",
+        type=_float_or_none,
+        help="Temperature for scaling the similarity matrix when computing OT losses. Use `--sim_matrix_temperature none` for no scaling.",
+        default=0.05,
     )
     group.add_argument(
         "--sinkhorn_solver",
