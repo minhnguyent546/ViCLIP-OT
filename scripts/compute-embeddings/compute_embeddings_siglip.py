@@ -121,12 +121,19 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 return_tensors="pt",
                 truncation=True,
                 max_length=64,  # siglip max length
-                padding=True,
+                # SigLIP was trained with fixed-length padding; "longest" changes the
+                # embedding of a caption depending on the other texts in the batch.
+                padding="max_length",
             ).to(device)
 
             batch_caption_embeddings = model.get_text_features(
                 **batch_caption_inputs,
             )
+            if args.normalize:
+                batch_caption_embeddings = (
+                    batch_caption_embeddings
+                    / batch_caption_embeddings.norm(p=2, dim=-1, keepdim=True)
+                )
 
             all_caption_embeddings.append(batch_caption_embeddings)
 
@@ -158,6 +165,10 @@ def compute_embeddings(args: argparse.Namespace) -> None:
                 images=batch_image_pils, return_tensors="pt", padding=True
             ).to(device)
             batch_image_embeddings = model.get_image_features(**batch_image_inputs)
+            if args.normalize:
+                batch_image_embeddings = batch_image_embeddings / batch_image_embeddings.norm(
+                    p=2, dim=-1, keepdim=True
+                )
 
             del batch_image_pils  # free up memory
 
@@ -231,6 +242,11 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         type=int,
         help="Batch size for processing captions",
         default=32,
+    )
+    parser.add_argument(
+        "--normalize",
+        action="store_true",
+        help="Whether to normalize the embeddings",
     )
     parser.add_argument(
         "--use_flash_attn",

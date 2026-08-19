@@ -5,4 +5,5 @@ uv run --no-sync python scripts/compute-embeddings/compute_embeddings_siglip.py 
     --dtype float32 \
     --dataset_dir ./data/UIT-OpenViIC \
     --metadata_json_file test.json \
-    --batch_size 32
+    --batch_size 32 \
+    --normalize
