@@ -54,6 +54,7 @@ dev = [
     "notebook>=7.6.2",
     "jupyterlab>=4.6.3",
     "jupyter-collaboration>=5.0.0",
+    "coverage>=7.15.4",
 ]
 vllm = [
     "vllm==0.16.0",
