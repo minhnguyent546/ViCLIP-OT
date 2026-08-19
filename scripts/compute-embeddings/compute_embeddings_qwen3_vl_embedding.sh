@@ -6,7 +6,8 @@ uv run --no-sync python scripts/compute-embeddings/compute_embeddings_qwen3_vl_e
     --dtype bfloat16 \
     --dataset_dir ./data/UIT-OpenViIC \
     --metadata_json_file test.json \
-    --batch_size 32 \
+    --batch_size_text 32 \
+    --batch_size_image 32 \
     --normalize
 
 # export CUDA_VISIBLE_DEVICES=3
