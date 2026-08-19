@@ -3,6 +3,7 @@ import os
 import random
 import subprocess
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import fvcore.nn
 import numpy as np
@@ -179,13 +180,23 @@ def load_yaml_file(file_path: str) -> dict[str, Any]:
     return data
 
 
+def _sanitize_git_remote_url(url: str) -> str:
+    """Strip embedded credentials from a git remote URL (e.g. https://user:PAT@host/...)."""
+    parts = urlsplit(url)
+    if not parts.scheme or not parts.netloc or "@" not in parts.netloc:
+        return url
+    # Drop userinfo (everything before the last '@' in netloc).
+    host = parts.netloc.rsplit("@", maxsplit=1)[-1]
+    return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+
 def get_git_info() -> dict[str, str]:
     info = {}
     try:
         git_repository = subprocess.check_output(
             ["git", "config", "--get", "remote.origin.url"], text=True
         ).strip()
-        info["repository"] = git_repository
+        info["repository"] = _sanitize_git_remote_url(git_repository)
     except Exception:
         pass
 
