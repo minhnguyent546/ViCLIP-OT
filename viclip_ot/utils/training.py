@@ -344,7 +344,7 @@ def bootstrap_retrieval_confidence_intervals(
     text_features: Tensor,
     logit_scale: Tensor,
     image_ids: Tensor,
-    num_resamples: int = 1000,
+    num_resamples: int = 5000,
     confidence_level: float = 0.95,
     seed: int = 42,
     batch_size: int = 256,
