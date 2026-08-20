@@ -95,6 +95,30 @@ def _add_model_and_dataset_opts(
         help="Central crop size used for evaluation",
         default=224,
     )
+    group.add_argument(
+        "--bootstrap_num_resamples",
+        type=int,
+        help="Number of image-cluster bootstrap resamples for the final test evaluation; 0 disables bootstrap CIs",
+        default=0,
+    )
+    group.add_argument(
+        "--bootstrap_confidence_level",
+        type=float,
+        help="Confidence level for the percentile bootstrap interval",
+        default=0.95,
+    )
+    group.add_argument(
+        "--bootstrap_seed",
+        type=int,
+        help="Seed for bootstrap resampling; defaults to --seed",
+        default=None,
+    )
+    group.add_argument(
+        "--bootstrap_batch_size",
+        type=int,
+        help="Number of bootstrap replicates processed together",
+        default=256,
+    )
 
 
 def _add_training_opts(parser: argparse.ArgumentParser) -> None:

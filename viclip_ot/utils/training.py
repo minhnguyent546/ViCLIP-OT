@@ -38,6 +38,24 @@ class RandContext:
         self._fork = None
 
 
+RECALL_METRIC_NAMES = (
+    "i2t_R__1",
+    "i2t_R__5",
+    "i2t_R__10",
+    "t2i_R__1",
+    "t2i_R__5",
+    "t2i_R__10",
+)
+
+
+class BootstrapCIResults(TypedDict):
+    num_images: int
+    num_resamples: int
+    confidence_level: float
+    seed: int
+    intervals: dict[str, tuple[float, float]]
+
+
 class EvalResults(TypedDict):
     loss: float
 
@@ -233,9 +251,19 @@ def eval_model(
     eval_data_loader: DataLoader,  # pyright: ignore[reportMissingTypeArgument]
     device: torch.device,
     autocast_context=None,
+    bootstrap_num_resamples: int = 0,
+    bootstrap_confidence_level: float = 0.95,
+    bootstrap_seed: int = 42,
+    bootstrap_batch_size: int = 256,
 ) -> EvalResults:
     if autocast_context is None:
         autocast_context = nullcontext()
+    if bootstrap_num_resamples < 0:
+        raise ValueError("bootstrap_num_resamples must be non-negative")
+    if not 0.0 < bootstrap_confidence_level < 1.0:
+        raise ValueError("bootstrap_confidence_level must be between 0 and 1")
+    if bootstrap_batch_size < 1:
+        raise ValueError("bootstrap_batch_size must be at least 1")
 
     model_mode_before = model.training
     model.eval()
@@ -288,6 +316,18 @@ def eval_model(
         )
         eval_metrics["loss"] = eval_loss.avg
 
+        if bootstrap_num_resamples > 0:
+            eval_metrics["bootstrap_ci"] = bootstrap_retrieval_confidence_intervals(
+                image_features=torch.cat(all_image_features, dim=0),
+                text_features=torch.cat(all_text_features, dim=0),
+                logit_scale=logit_scale.cpu(),
+                image_ids=torch.cat(all_image_ids, dim=0),
+                num_resamples=bootstrap_num_resamples,
+                confidence_level=bootstrap_confidence_level,
+                seed=bootstrap_seed,
+                batch_size=bootstrap_batch_size,
+            )
+
         alignment_metrics = compute_alignment_score(
             image_embeddings=torch.cat(all_image_features, dim=0).numpy(),
             text_embeddings=torch.cat(all_text_features, dim=0).numpy(),
@@ -297,6 +337,137 @@ def eval_model(
     model.train(model_mode_before)
 
     return eval_metrics  # pyright: ignore[reportReturnType]
+
+
+def bootstrap_retrieval_confidence_intervals(
+    image_features: Tensor,
+    text_features: Tensor,
+    logit_scale: Tensor,
+    image_ids: Tensor,
+    num_resamples: int = 1000,
+    confidence_level: float = 0.95,
+    seed: int = 42,
+    batch_size: int = 256,
+) -> BootstrapCIResults:
+    """Estimate retrieval-metric confidence intervals with an image-cluster bootstrap.
+
+    Each bootstrap replicate samples image queries with replacement and keeps the
+    complete, original gallery fixed. All captions belonging to a sampled image
+    are included as text queries, so image-caption dependence is preserved.
+    """
+    if num_resamples < 1:
+        raise ValueError("num_resamples must be at least 1")
+    if not 0.0 < confidence_level < 1.0:
+        raise ValueError("confidence_level must be between 0 and 1")
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1")
+
+    image_features = image_features.detach().cpu().float()
+    text_features = text_features.detach().cpu().float()
+    image_ids = image_ids.detach().cpu()
+    logit_scale = logit_scale.detach().cpu().float()
+    if image_features.ndim != 2 or text_features.ndim != 2:
+        raise ValueError("image_features and text_features must be rank-2 tensors")
+    if image_features.shape[0] != image_ids.shape[0]:
+        raise ValueError("image_features and image_ids must have the same number of rows")
+    if text_features.shape[0] != image_ids.shape[0]:
+        raise ValueError("text_features and image_ids must have the same number of rows")
+    if image_ids.ndim != 1:
+        raise ValueError("image_ids must be a rank-1 tensor")
+
+    unique_ids, first_indices = np.unique(image_ids.numpy(), return_index=True)
+    unique_image_features = image_features[torch.from_numpy(first_indices)]
+    num_images = len(unique_ids)
+    if num_images == 0:
+        raise ValueError("Cannot bootstrap an empty retrieval dataset")
+
+    caption_group_indices = np.searchsorted(unique_ids, image_ids.numpy())
+    if not np.array_equal(unique_ids[caption_group_indices], image_ids.numpy()):
+        raise ValueError("Every caption must have an image ID present in the image gallery")
+
+    logits_i2t = logit_scale * unique_image_features @ text_features.t()
+    logits_t2i = logit_scale * text_features @ unique_image_features.t()
+    mask_i2t = torch.from_numpy(unique_ids[:, None] == image_ids.numpy()[None, :])
+    mask_t2i = mask_i2t.t()
+
+    # Compute per-query hits once. The bootstrap then only resamples these
+    # fixed outcomes, not model features or rankings.
+    i2t_hits = _compute_retrieval_hits(logits_i2t, mask_i2t).numpy()
+    t2i_hits = _compute_retrieval_hits(logits_t2i, mask_t2i).numpy()
+
+    caption_counts = np.bincount(caption_group_indices, minlength=num_images)
+    if np.any(caption_counts == 0):
+        raise ValueError("Every image must have at least one caption")
+    t2i_hits_by_image = np.stack(
+        [
+            np.bincount(
+                caption_group_indices,
+                weights=t2i_hits[:, column],
+                minlength=num_images,
+            )
+            for column in range(t2i_hits.shape[1])
+        ],
+        axis=1,
+    )
+
+    rng = np.random.default_rng(seed)
+    metric_samples = np.empty((num_resamples, len(RECALL_METRIC_NAMES)), dtype=np.float64)
+    sampling_probabilities = np.full(num_images, 1.0 / num_images)
+
+    # Process bootstrap draws in batches to limit temporary memory use. Each
+    # row draws `num_images` IDs with replacement.
+    for start in range(0, num_resamples, batch_size):
+        stop = min(start + batch_size, num_resamples)
+        batch_image_counts = rng.multinomial(
+            num_images,
+            sampling_probabilities,
+            size=stop - start,
+        )
+        # Counts preserve duplicate image clusters exactly.
+
+        sampled_i2t_denominator = float(num_images)
+        sampled_t2i_denominator = batch_image_counts @ caption_counts
+        metric_samples[start:stop, 0:3] = (batch_image_counts @ i2t_hits) / sampled_i2t_denominator
+        metric_samples[start:stop, 3:6] = (
+            batch_image_counts @ t2i_hits_by_image
+        ) / sampled_t2i_denominator[:, None]
+
+    alpha = (1.0 - confidence_level) / 2.0
+    quantiles = np.quantile(
+        metric_samples,
+        [alpha, 1.0 - alpha],
+        axis=0,
+        method="linear",
+    )
+    intervals = {
+        metric_name: (float(quantiles[0, i]), float(quantiles[1, i]))
+        for i, metric_name in enumerate(RECALL_METRIC_NAMES)
+    }
+    # Compute the interval for the reported six-way average from each
+    # replicate, rather than averaging six separately computed bounds.
+    average_samples = metric_samples.mean(axis=1)
+    average_quantiles = np.quantile(
+        average_samples,
+        [alpha, 1.0 - alpha],
+        method="linear",
+    )
+    intervals["average_R"] = (float(average_quantiles[0]), float(average_quantiles[1]))
+    return {
+        "num_images": num_images,
+        "num_resamples": num_resamples,
+        "confidence_level": confidence_level,
+        "seed": seed,
+        "intervals": intervals,
+    }
+
+
+def _compute_retrieval_hits(logits: Tensor, mask: Tensor, k_vals=(1, 5, 10)) -> Tensor:
+    """Return per-query Recall@K hits with shape ``[queries, len(k_vals)]``."""
+    max_k = min(max(k_vals), logits.shape[1])
+    _, top_indices = logits.topk(max_k, dim=1)
+    rows = torch.arange(logits.shape[0]).view(-1, 1)
+    retrieved_mask = mask[rows, top_indices]
+    return torch.stack([retrieved_mask[:, : min(k, max_k)].any(dim=1) for k in k_vals], dim=1)
 
 
 def get_retrieval_metrics(

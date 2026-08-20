@@ -420,6 +420,10 @@ def train_model(args: argparse.Namespace) -> None:
             criterion=criterion,
             eval_data_loader=data_loader,
             device=device,
+            bootstrap_num_resamples=args.bootstrap_num_resamples,
+            bootstrap_confidence_level=args.bootstrap_confidence_level,
+            bootstrap_seed=(args.bootstrap_seed if args.bootstrap_seed is not None else args.seed),
+            bootstrap_batch_size=args.bootstrap_batch_size,
         )
         test_elapsed_time = time.perf_counter() - test_start_time
         logger.info(
@@ -441,6 +445,28 @@ def train_model(args: argparse.Namespace) -> None:
             f"    Modality_gap: {test_results['modality_gap']:0.6f}\n"
             f"    Elapsed time: {utils.to_hms(test_elapsed_time)}\n"
         )
+        bootstrap_ci = test_results.get("bootstrap_ci")
+        if bootstrap_ci is not None:
+            confidence_percent = 100.0 * bootstrap_ci["confidence_level"]
+            logger.info(
+                f"    Bootstrap {confidence_percent:.1f}% CIs "
+                f"(n_images={bootstrap_ci['num_images']}, "
+                f"resamples={bootstrap_ci['num_resamples']}, seed={bootstrap_ci['seed']}):\n"
+                f"      average_R: {bootstrap_ci['intervals']['average_R'][0]:.6f}, "
+                f"{bootstrap_ci['intervals']['average_R'][1]:.6f}\n"
+                f"      i2t_R@1: {bootstrap_ci['intervals']['i2t_R__1'][0]:.6f}, "
+                f"{bootstrap_ci['intervals']['i2t_R__1'][1]:.6f}\n"
+                f"      i2t_R@5: {bootstrap_ci['intervals']['i2t_R__5'][0]:.6f}, "
+                f"{bootstrap_ci['intervals']['i2t_R__5'][1]:.6f}\n"
+                f"      i2t_R@10: {bootstrap_ci['intervals']['i2t_R__10'][0]:.6f}, "
+                f"{bootstrap_ci['intervals']['i2t_R__10'][1]:.6f}\n"
+                f"      t2i_R@1: {bootstrap_ci['intervals']['t2i_R__1'][0]:.6f}, "
+                f"{bootstrap_ci['intervals']['t2i_R__1'][1]:.6f}\n"
+                f"      t2i_R@5: {bootstrap_ci['intervals']['t2i_R__5'][0]:.6f}, "
+                f"{bootstrap_ci['intervals']['t2i_R__5'][1]:.6f}\n"
+                f"      t2i_R@10: {bootstrap_ci['intervals']['t2i_R__10'][0]:.6f}, "
+                f"{bootstrap_ci['intervals']['t2i_R__10'][1]:.6f}"
+            )
 
     if args.run_test_only:
         return _run_test_only(test_data_loader)
