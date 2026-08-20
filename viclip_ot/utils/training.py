@@ -2,7 +2,7 @@ import heapq
 import os
 import re
 from contextlib import nullcontext
-from typing import Any, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
 import numpy as np
 import timm
@@ -54,6 +54,15 @@ class BootstrapCIResults(TypedDict):
     confidence_level: float
     seed: int
     intervals: dict[str, tuple[float, float]]
+
+
+class RetrievalTensors(NamedTuple):
+    logits_i2t: Tensor
+    mask_i2t: Tensor
+    logits_t2i: Tensor
+    mask_t2i: Tensor
+    unique_ids: np.ndarray
+    caption_group_indices: np.ndarray
 
 
 class EvalResults(TypedDict):
@@ -308,26 +317,23 @@ def eval_model(
             )
 
         assert logit_scale is not None
-        eval_metrics = get_retrieval_metrics(
+        retrieval_tensors = _build_retrieval_tensors(
             image_features=torch.cat(all_image_features, dim=0),
             text_features=torch.cat(all_text_features, dim=0),
             logit_scale=logit_scale.cpu(),
             image_ids=torch.cat(all_image_ids, dim=0),
         )
+        eval_metrics = _get_retrieval_metrics_from_tensors(retrieval_tensors)
         eval_metrics["loss"] = eval_loss.avg
 
         if bootstrap_num_resamples > 0:
-            eval_metrics["bootstrap_ci"] = bootstrap_retrieval_confidence_intervals(
-                image_features=torch.cat(all_image_features, dim=0),
-                text_features=torch.cat(all_text_features, dim=0),
-                logit_scale=logit_scale.cpu(),
-                image_ids=torch.cat(all_image_ids, dim=0),
+            eval_metrics["bootstrap_ci"] = _bootstrap_retrieval_confidence_intervals_from_tensors(
+                retrieval_tensors=retrieval_tensors,
                 num_resamples=bootstrap_num_resamples,
                 confidence_level=bootstrap_confidence_level,
                 seed=bootstrap_seed,
                 batch_size=bootstrap_batch_size,
             )
-
         alignment_metrics = compute_alignment_score(
             image_embeddings=torch.cat(all_image_features, dim=0).numpy(),
             text_embeddings=torch.cat(all_text_features, dim=0).numpy(),
@@ -339,69 +345,71 @@ def eval_model(
     return eval_metrics  # pyright: ignore[reportReturnType]
 
 
-def bootstrap_retrieval_confidence_intervals(
+def _build_retrieval_tensors(
     image_features: Tensor,
     text_features: Tensor,
     logit_scale: Tensor,
     image_ids: Tensor,
+) -> RetrievalTensors:
+    """Build the shared retrieval logits, masks, and image-caption groups."""
+    image_features = image_features.detach().cpu().float()
+    text_features = text_features.detach().cpu().float()
+    image_ids = image_ids.detach().cpu()
+    logit_scale = logit_scale.detach().cpu().float()
+
+    unique_ids, first_indices = np.unique(image_ids.numpy(), return_index=True)
+    unique_image_features = image_features[torch.from_numpy(first_indices)]
+
+    logits_i2t = logit_scale * unique_image_features @ text_features.t()
+    mask_i2t = torch.from_numpy(unique_ids[:, None] == image_ids.numpy()[None, :])
+
+    logits_t2i = logit_scale * text_features @ unique_image_features.t()
+    mask_t2i = mask_i2t.t()
+
+    caption_group_indices = np.searchsorted(unique_ids, image_ids.numpy())
+    return RetrievalTensors(
+        logits_i2t=logits_i2t,
+        mask_i2t=mask_i2t,
+        logits_t2i=logits_t2i,
+        mask_t2i=mask_t2i,
+        unique_ids=unique_ids,
+        caption_group_indices=caption_group_indices,
+    )
+
+
+def _bootstrap_retrieval_confidence_intervals_from_tensors(
+    retrieval_tensors: RetrievalTensors,
     num_resamples: int = 5000,
     confidence_level: float = 0.95,
     seed: int = 42,
     batch_size: int = 256,
 ) -> BootstrapCIResults:
-    """Estimate retrieval-metric confidence intervals with an image-cluster bootstrap.
-
-    Each bootstrap replicate samples image queries with replacement and keeps the
-    complete, original gallery fixed. All captions belonging to a sampled image
-    are included as text queries, so image-caption dependence is preserved.
-    """
-    if num_resamples < 1:
-        raise ValueError("num_resamples must be at least 1")
-    if not 0.0 < confidence_level < 1.0:
-        raise ValueError("confidence_level must be between 0 and 1")
-    if batch_size < 1:
-        raise ValueError("batch_size must be at least 1")
-
-    image_features = image_features.detach().cpu().float()
-    text_features = text_features.detach().cpu().float()
-    image_ids = image_ids.detach().cpu()
-    logit_scale = logit_scale.detach().cpu().float()
-    if image_features.ndim != 2 or text_features.ndim != 2:
-        raise ValueError("image_features and text_features must be rank-2 tensors")
-    if image_features.shape[0] != image_ids.shape[0]:
-        raise ValueError("image_features and image_ids must have the same number of rows")
-    if text_features.shape[0] != image_ids.shape[0]:
-        raise ValueError("text_features and image_ids must have the same number of rows")
-    if image_ids.ndim != 1:
-        raise ValueError("image_ids must be a rank-1 tensor")
-
-    unique_ids, first_indices = np.unique(image_ids.numpy(), return_index=True)
-    unique_image_features = image_features[torch.from_numpy(first_indices)]
-    num_images = len(unique_ids)
+    """Estimate bootstrap intervals from precomputed retrieval tensors."""
+    num_images = len(retrieval_tensors.unique_ids)
     if num_images == 0:
         raise ValueError("Cannot bootstrap an empty retrieval dataset")
 
-    caption_group_indices = np.searchsorted(unique_ids, image_ids.numpy())
-    if not np.array_equal(unique_ids[caption_group_indices], image_ids.numpy()):
-        raise ValueError("Every caption must have an image ID present in the image gallery")
-
-    logits_i2t = logit_scale * unique_image_features @ text_features.t()
-    logits_t2i = logit_scale * text_features @ unique_image_features.t()
-    mask_i2t = torch.from_numpy(unique_ids[:, None] == image_ids.numpy()[None, :])
-    mask_t2i = mask_i2t.t()
-
     # Compute per-query hits once. The bootstrap then only resamples these
     # fixed outcomes, not model features or rankings.
-    i2t_hits = _compute_retrieval_hits(logits_i2t, mask_i2t).numpy()
-    t2i_hits = _compute_retrieval_hits(logits_t2i, mask_t2i).numpy()
+    i2t_hits = _compute_retrieval_hits(
+        retrieval_tensors.logits_i2t,
+        retrieval_tensors.mask_i2t,
+    ).numpy()
+    t2i_hits = _compute_retrieval_hits(
+        retrieval_tensors.logits_t2i,
+        retrieval_tensors.mask_t2i,
+    ).numpy()
 
-    caption_counts = np.bincount(caption_group_indices, minlength=num_images)
+    caption_counts = np.bincount(
+        retrieval_tensors.caption_group_indices,
+        minlength=num_images,
+    )
     if np.any(caption_counts == 0):
         raise ValueError("Every image must have at least one caption")
     t2i_hits_by_image = np.stack(
         [
             np.bincount(
-                caption_group_indices,
+                retrieval_tensors.caption_group_indices,
                 weights=t2i_hits[:, column],
                 minlength=num_images,
             )
@@ -461,13 +469,84 @@ def bootstrap_retrieval_confidence_intervals(
     }
 
 
+def bootstrap_retrieval_confidence_intervals(
+    image_features: Tensor,
+    text_features: Tensor,
+    logit_scale: Tensor,
+    image_ids: Tensor,
+    num_resamples: int = 5000,
+    confidence_level: float = 0.95,
+    seed: int = 42,
+    batch_size: int = 256,
+) -> BootstrapCIResults:
+    """Estimate retrieval-metric confidence intervals with an image-cluster bootstrap.
+
+    Each bootstrap replicate samples image queries with replacement and keeps the
+    complete, original gallery fixed. All captions belonging to a sampled image
+    are included as text queries, so image-caption dependence is preserved.
+    """
+    if num_resamples < 1:
+        raise ValueError("num_resamples must be at least 1")
+    if not 0.0 < confidence_level < 1.0:
+        raise ValueError("confidence_level must be between 0 and 1")
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1")
+
+    if image_features.ndim != 2 or text_features.ndim != 2:
+        raise ValueError("image_features and text_features must be rank-2 tensors")
+    if image_features.shape[0] != image_ids.shape[0]:
+        raise ValueError("image_features and image_ids must have the same number of rows")
+    if text_features.shape[0] != image_ids.shape[0]:
+        raise ValueError("text_features and image_ids must have the same number of rows")
+    if image_ids.ndim != 1:
+        raise ValueError("image_ids must be a rank-1 tensor")
+
+    retrieval_tensors = _build_retrieval_tensors(
+        image_features=image_features,
+        text_features=text_features,
+        logit_scale=logit_scale,
+        image_ids=image_ids,
+    )
+    return _bootstrap_retrieval_confidence_intervals_from_tensors(
+        retrieval_tensors=retrieval_tensors,
+        num_resamples=num_resamples,
+        confidence_level=confidence_level,
+        seed=seed,
+        batch_size=batch_size,
+    )
+
+
 def _compute_retrieval_hits(logits: Tensor, mask: Tensor, k_vals=(1, 5, 10)) -> Tensor:
     """Return per-query Recall@K hits with shape ``[queries, len(k_vals)]``."""
     max_k = min(max(k_vals), logits.shape[1])
-    _, top_indices = logits.topk(max_k, dim=1)
+    _, top_indices = logits.topk(max_k, dim=1)  # [B, max_k]
+
+    # gather ground truth booleans at the retrieved positions
     rows = torch.arange(logits.shape[0]).view(-1, 1)
-    retrieved_mask = mask[rows, top_indices]
+    retrieved_mask = mask[rows, top_indices]  # [B, max_k]
+
     return torch.stack([retrieved_mask[:, : min(k, max_k)].any(dim=1) for k in k_vals], dim=1)
+
+
+def _get_retrieval_metrics_from_tensors(
+    retrieval_tensors: RetrievalTensors,
+) -> dict[str, Any]:
+    metrics: dict[str, Any] = {}
+    metrics.update(
+        _compute_retrieval_metrics(
+            retrieval_tensors.logits_i2t,
+            retrieval_tensors.mask_i2t,
+            prefix="i2t",
+        )
+    )
+    metrics.update(
+        _compute_retrieval_metrics(
+            retrieval_tensors.logits_t2i,
+            retrieval_tensors.mask_t2i,
+            prefix="t2i",
+        )
+    )
+    return metrics
 
 
 def get_retrieval_metrics(
@@ -479,49 +558,28 @@ def get_retrieval_metrics(
     """
     If `image_ids` is provided, the computation will take into account image with multiple captions.
     """
-    metrics: dict[str, Any] = {}
     if image_ids is None:
         # 1-1 image caption mapping
         image_ids = torch.arange(len(image_features))
 
-    image_features = image_features.cpu().float()
-    text_features = text_features.cpu().float()
-    image_ids = image_ids.cpu()
-    image_ids = image_ids.cpu()
-
-    unique_ids, first_indices = np.unique(image_ids.numpy(), return_index=True)
-    unique_ids = torch.from_numpy(unique_ids)
-    first_indices = torch.from_numpy(first_indices)
-
-    unique_image_features = image_features[first_indices]
+    retrieval_tensors = _build_retrieval_tensors(
+        image_features=image_features,
+        text_features=text_features,
+        logit_scale=logit_scale,
+        image_ids=image_ids,
+    )
 
     # Image-to-Text
     # Query:   Unique Images [N_unique]
     # Gallery: All Texts     [N_total]
     # Protocol: For each unique image, did we find ANY of its captions?
     # Logits: [N_unique, N_total]
-    logits_i2t = logit_scale * unique_image_features @ text_features.t()
-
-    # Mask: [N_unique, N_total]
-    # Rows are Unique IDs, Cols are All IDs. Match if they are equal.
-    mask_i2t = unique_ids.view(-1, 1) == image_ids.view(1, -1)
-
-    metrics.update(_compute_retrieval_metrics(logits_i2t, mask_i2t, prefix="i2t"))
-
     # Text-to-Image
     # Query:   All Texts     [N_total]
     # Gallery: Unique Images [N_unique]
     # Protocol: For each caption, did we find the ONE correct image?
     # Logits: [N_total, N_unique]
-    logits_t2i = logit_scale * text_features @ unique_image_features.t()
-
-    # Mask: [N_total, N_unique]
-    # Rows are All IDs, Cols are Unique IDs. Match if they are equal.
-    mask_t2i = image_ids.view(-1, 1) == unique_ids.view(1, -1)
-
-    metrics.update(_compute_retrieval_metrics(logits_t2i, mask_t2i, prefix="t2i"))
-
-    return metrics
+    return _get_retrieval_metrics_from_tensors(retrieval_tensors)
 
 
 def _compute_retrieval_metrics(
@@ -530,21 +588,18 @@ def _compute_retrieval_metrics(
     """ "Compute recall@k and mean rank."""
 
     results = {}
-    max_k = min(max(k_vals), logits.shape[1])
-    _, top_indices = logits.topk(max_k, dim=1)  # [B, max_k]
-
     # gather ground truth booleans at the retrieved positions
-    rows = torch.arange(logits.shape[0]).view(-1, 1)
-    retrieved_mask = mask[rows, top_indices]  # [B, max_k]
+    hits_by_k = _compute_retrieval_hits(logits, mask, k_vals)
 
-    for k in k_vals:
+    for k_idx, k in enumerate(k_vals):
         # hit if at least one of the top k is True
-        hits = retrieved_mask[:, :k].any(dim=1)
+        hits = hits_by_k[:, k_idx]
         results[f"{prefix}_R__{k}"] = hits.float().mean().item()
 
     argsort = torch.argsort(logits, dim=1, descending=True)
 
     # sorted_mask[i, j] is True if the item at rank 'j' is a match
+    rows = torch.arange(logits.shape[0]).view(-1, 1)
     sorted_mask = mask[rows, argsort]
 
     # find the first rank (min index) where sorted_mask is True
