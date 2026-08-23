@@ -8,6 +8,7 @@ import time
 from datetime import datetime
 from typing import Literal
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.version
@@ -888,11 +889,10 @@ def train_model(args: argparse.Namespace) -> None:
             total_training_only_time += step_elapsed
             total_training_samples += num_items_in_batch
 
-            # note: we clamp to 4.6052 = ln(100), as in the original paper.
+            # Clamp logit_scale after each optimizer step, as in the original
+            # CLIP paper: the scale stays within [0.01, 100].
             with torch.no_grad():
-                # model.logit_scale.clamp_(min=0, max=np.log(100))
-                # model.logit_scale.data.clamp_(min=np.log(1/100), max=np.log(100))
-                pass
+                model.logit_scale.data.clamp_(min=np.log(1 / 100), max=np.log(100))
 
             # Skip a lone "loss" component (e.g. plain SigLIP) — it duplicates the total.
             detailed_loss_components = {

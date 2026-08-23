@@ -548,8 +548,6 @@ class ViCLIPOT(nn.Module):
         image_features = self.encode_image(images, normalize=True)
         text_features = self.encode_text(text_inputs, normalize=True)
 
-        self.logit_scale.data.clamp_(min=np.log(1 / 100), max=np.log(100))
-
         output_dict = {
             "image_features": image_features,
             "text_features": text_features,
