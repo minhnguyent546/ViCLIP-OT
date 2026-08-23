@@ -34,7 +34,7 @@ With ``\\epsilon ~ N(0, I_d)``, one has ``<e, \\epsilon> ~ N(0, 1)`` and
 For large ``d``, ``||\\epsilon||_2^2 / d \\to 1`` in probability and
 ``<e,\\epsilon> = O_p(1)`` is negligible next to ``\\sigma^2 d``, so
 
-    E[<e, tilde{e}>]  \\approx  1 / sqrt(1 + \\sigma^2 d).                        (3)
+    E[<e, tilde{e}>]  \\approx  1 / sqrt(1 + \\sigma^2 d)  =:  \\rho_true.         (3)
 
 Inverting (3) at a chosen ``\\rho*`` gives
 
@@ -45,14 +45,38 @@ At this ``d``, Monte Carlo self-cosine under (1)+(4) matches ``\\rho*`` within
 ``10^{-3}``. The script always logs the empirical mean self-cosine on the
 loaded tensors.
 
-For two clean unit vectors with cosine ``s = <u, v>``, independent corruptions
-give the large-``d`` pairwise shrinkage
+**Exact action on embeddings and Gram entries.** Isotropy of ``N(0, I_d)`` and
+boundedness of the normalization map give the exact mean-shrinkage identity
 
-    E[<tilde{u}, tilde{v}>]  \\approx  s / (1 + \\sigma^2 d)  =  s (\\rho*)^2.     (5)
+    E[\\tilde{e} | e]  =  \\rho_true e,                                           (5a)
 
-At ``\\rho* = 0.5`` Gram entries shrink by about ``1/4`` (e.g. ``s = 0.8`` becomes
-``\\approx 0.2``). Neighborhood structure is weakened, not erased; ``random`` is
-the structureless extreme (``\\sigma \\to \\infty`` limit of (1)).
+so corruption shrinks each embedding toward the origin in mean and never pulls
+it toward an unrelated direction. For two clean unit vectors with cosine
+``s = <u, v>`` and independent noise draws, ``\\tilde{u}`` and ``\\tilde{v}``
+are independent, hence
+
+    E[<\\tilde{u}, \\tilde{v}> | u, v]
+        = <E[\\tilde{u}], E[\\tilde{v}]>  =  (\\rho_true)^2 s.                    (5b)
+
+Both hold for every ``d``; the large-``d`` step lives only in
+``\\rho_true \\approx \\rho*`` (Eq. 3). Off-diagonal Gram entries therefore
+shrink by ``(\\rho*)^2`` in mean (``1/4`` at ``\\rho* = 0.5``, e.g. ``s = 0.8``
+becomes ``\\approx 0.2``), while each row's diagonal entry sits at
+``\\rho_true``.
+
+Around that mean, per-entry fluctuations have standard deviation
+
+    std(<\\tilde{u}, \\tilde{v}>)
+        \\approx  sqrt(2\\sigma^2 + \\sigma^4 d) / (1 + \\sigma^2 d)
+        =  (\\rho*)^2 sqrt((\\rho*)^{-4} - 1) / sqrt(d).                          (6)
+
+``\\approx 0.021`` at the default settings, bounded by ``1/sqrt(d)`` as
+``\\rho* \\to 0``. Every ``sim_combine_method`` in ``viclip_ot/train.py`` is
+homogeneous of degree 1, so the combined graph inherits the same uniform
+``(\\rho*)^2`` mean shrink; through the softmax graph prior that deterministic
+part acts as a prior-temperature rescale, and the fluctuation (6) is what
+perturbs neighbor rankings. Neighborhood structure is weakened, not erased;
+``random`` is the structureless extreme (``\\sigma \\to \\infty`` limit of (1)).
 
 Isotropic Gaussian is the max-entropy zero-mean law at fixed noise power
 ``E[||\\sigma \\epsilon||_2^2] = \\sigma^2 d`` once no preferred axis is allowed
@@ -64,7 +88,7 @@ would not.
 
 **Random.** Ignore input values (shape only) and draw
 
-    tilde{e}_i  =  g_i / ||g_i||_2,   g_i ~ N(0, I_d).                          (6)
+    tilde{e}_i  =  g_i / ||g_i||_2,   g_i ~ N(0, I_d).                          (7)
 
 Examples
 --------
@@ -197,7 +221,7 @@ def sample_random_unit_embeddings(
     dtype: torch.dtype = torch.float32,
     device: torch.device | None = None,
 ) -> torch.Tensor:
-    """Eq. (6): i.i.d. Gaussian rows, L2-normalized."""
+    """Eq. (7): i.i.d. Gaussian rows, L2-normalized."""
     if device is None:
         device = torch.device("cpu")
     g = torch.randn(num_rows, dim, generator=generator, dtype=dtype, device=device)
@@ -213,6 +237,49 @@ def mean_row_cosine(a: torch.Tensor, b: torch.Tensor) -> float:
 
 def mean_row_norm(x: torch.Tensor) -> float:
     return float(torch.linalg.vector_norm(x, ord=2, dim=-1).mean().item())
+
+
+def topk_neighbor_overlap(
+    clean_unit: torch.Tensor,
+    corrupted_unit: torch.Tensor,
+    k_values: tuple[int, ...] = (5, 10),
+    block_size: int = 512,
+) -> dict[int, float]:
+    """Mean recall@k of corrupted neighborhoods against clean ones.
+
+    For each row, compare the indices of the k largest similarities in the
+    clean graph and in the corrupted graph, excluding the self-neighbor (the
+    diagonal would otherwise dominate both graphs and make k=1 trivially 1.0).
+    Returns ``{k: overlap}``; rows are processed in blocks so the full (N, N)
+    similarity matrix is never materialized.
+    """
+    num_rows = clean_unit.shape[0]
+    if clean_unit.shape != corrupted_unit.shape:
+        raise ValueError(
+            f"shape mismatch: {tuple(clean_unit.shape)} vs {tuple(corrupted_unit.shape)}"
+        )
+    if num_rows < 2:
+        # No non-self neighbors exist; the diagonal is always excluded.
+        return dict.fromkeys(k_values, 0.0)
+    max_k = max(min(k, num_rows - 1) for k in k_values)
+    hits = dict.fromkeys(k_values, 0)
+    totals = dict.fromkeys(k_values, 0)
+    local_rows = torch.arange(block_size)
+    for start in range(0, num_rows, block_size):
+        end = min(start + block_size, num_rows)
+        block = end - start
+        clean_sims = clean_unit[start:end] @ clean_unit.T
+        corr_sims = corrupted_unit[start:end] @ corrupted_unit.T
+        clean_sims[local_rows[:block], local_rows[:block] + start] = float("-inf")
+        corr_sims[local_rows[:block], local_rows[:block] + start] = float("-inf")
+        clean_idx = torch.topk(clean_sims, k=max_k, dim=1).indices
+        corr_idx = torch.topk(corr_sims, k=max_k, dim=1).indices
+        matched = (clean_idx.unsqueeze(2) == corr_idx.unsqueeze(1)).any(dim=2)
+        for k in k_values:
+            k_eff = min(k, num_rows - 1)
+            hits[k] += int(matched[:, :k_eff].sum().item())
+            totals[k] += k_eff * block
+    return {k: hits[k] / totals[k] for k in k_values}
 
 
 def default_output_path(input_path: str, mode: str, rho_star: float | None) -> str:
@@ -286,6 +353,7 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
     sigma: float | None
     approx_rho: float | None
     shrinkage: float | None
+    pair_fluctuation_std: float | None
 
     if args.mode == "noise":
         if args.sigma is not None:
@@ -305,6 +373,7 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
             approx_rho = approx_expected_self_cosine(sigma, dim)
 
         shrinkage = approx_rho * approx_rho
+        pair_fluctuation_std = math.sqrt(2.0 * sigma**2 + sigma**4 * dim) / (1.0 + sigma**2 * dim)
         image_out = corrupt_isotropic_gaussian(image_unit, sigma, gen_image)
         caption_out = corrupt_isotropic_gaussian(caption_unit, sigma, gen_caption)
         emp_rho_image = mean_row_cosine(image_unit, image_out)
@@ -314,6 +383,7 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
         rho_star_nominal = None
         approx_rho = 0.0
         shrinkage = 0.0
+        pair_fluctuation_std = None
         image_out = sample_random_unit_embeddings(n_rows, dim, gen_image, dtype=image_unit.dtype)
         caption_out = sample_random_unit_embeddings(
             n_rows, dim, gen_caption, dtype=caption_unit.dtype
@@ -321,15 +391,20 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
         emp_rho_image = mean_row_cosine(image_unit, image_out)
         emp_rho_caption = mean_row_cosine(caption_unit, caption_out)
 
+    overlap_image = topk_neighbor_overlap(image_unit, image_out)
+    overlap_caption = topk_neighbor_overlap(caption_unit, caption_out)
+
+    # Tag filenames with the effective rho*: the nominal target when --rho_star
+    # is used, else the rho* implied by an explicit --sigma override.
+    effective_rho_star: float | None = None
+    if args.mode == "noise":
+        effective_rho_star = rho_star_nominal if rho_star_nominal is not None else approx_rho
+
     out_image = args.output_image or default_output_path(
-        args.image_embeddings,
-        args.mode,
-        args.rho_star if args.mode == "noise" else None,
+        args.image_embeddings, args.mode, effective_rho_star
     )
     out_caption = args.output_caption or default_output_path(
-        args.caption_embeddings,
-        args.mode,
-        args.rho_star if args.mode == "noise" else None,
+        args.caption_embeddings, args.mode, effective_rho_star
     )
 
     logger.info("corrupt_teacher_embeddings")
@@ -347,10 +422,16 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
         logger.info(f"rho_star (nominal)   : {rho_disp}")
         logger.info(f"sigma                : {sigma:.8f}")
         logger.info(f"approx E[<e,tilde e>]: {approx_rho:.6f}   # Eq. (3)")
-        logger.info(f"approx pairwise factor: {shrinkage:.6f}   # Eq. (5): (rho)^2")
+        logger.info(f"approx pairwise factor: {shrinkage:.6f}   # Eq. (5b): (rho)^2")
+        logger.info(f"approx pairwise fluct std: {pair_fluctuation_std:.6f}   # Eq. (6)")
         logger.info("sigma formula        : sqrt((1/rho*^2 - 1)/d)   # Eq. (4)")
     logger.info(f"empirical rho image  : {emp_rho_image:.6f}")
     logger.info(f"empirical rho caption: {emp_rho_caption:.6f}")
+    for k in sorted(overlap_image):
+        logger.info(
+            f"top-{k} neighbor overlap : image={overlap_image[k]:.4f}  "
+            f"caption={overlap_caption[k]:.4f}  (chance {k / n_rows:.6f})"
+        )
     logger.info(f"output image         : {out_image}")
     logger.info(f"output caption       : {out_caption}")
 
@@ -373,8 +454,14 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
         "sigma": sigma,
         "approx_expected_self_cosine": approx_rho,
         "approx_pairwise_shrinkage_factor": shrinkage,
+        "approx_pairwise_fluctuation_std": pair_fluctuation_std,
         "empirical_rho_image": emp_rho_image,
         "empirical_rho_caption": emp_rho_caption,
+        "topk_neighbor_overlap": {
+            "image": overlap_image,
+            "caption": overlap_caption,
+            "chance_level_k_over_N": {str(k): k / n_rows for k in sorted(overlap_image)},
+        },
         "input_image_embeddings": os.path.abspath(args.image_embeddings),
         "input_caption_embeddings": os.path.abspath(args.caption_embeddings),
         "output_image_embeddings": os.path.abspath(out_image),
@@ -383,7 +470,14 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
             "corruption": ("tilde_e = (e + sigma * eps) / ||e + sigma * eps||_2, eps ~ N(0, I_d)"),
             "sigma_from_rho_star": "sigma = sqrt( (1/rho_star^2 - 1) / d )",
             "expected_self_cosine_large_d": ("E[<e, tilde_e>] ~= 1 / sqrt(1 + sigma^2 * d)"),
-            "pairwise_shrinkage_large_d": ("E[<tilde_u, tilde_v>] ~= <u,v> * (rho)^2"),
+            "mean_embedding_shrinkage_exact": "E[tilde_e | e] = rho_true * e",
+            "pairwise_shrinkage_exact": (
+                "E[<tilde_u, tilde_v> | u, v] = rho_true^2 * <u,v> "
+                "(exact; rho_true ~= 1/sqrt(1 + sigma^2 * d))"
+            ),
+            "pairwise_fluctuation_std_large_d": (
+                "std(<tilde_u, tilde_v>) ~= sqrt(2 * sigma^2 + sigma^4 * d) / (1 + sigma^2 * d)"
+            ),
             "random": "tilde_e = g / ||g||_2, g ~ N(0, I_d)",
         },
     }
@@ -421,7 +515,7 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         required=True,
         help=(
             "noise: isotropic Gaussian on unit rows, then re-normalize (Eq. 1). "
-            "random: i.i.d. Gaussian rows, then re-normalize (Eq. 6)."
+            "random: i.i.d. Gaussian rows, then re-normalize (Eq. 7)."
         ),
     )
     parser.add_argument(
@@ -462,7 +556,8 @@ def add_opts(parser: argparse.ArgumentParser) -> None:
         type=float,
         help=(
             "Override \\sigma for --mode noise. Prefer --rho_star so severity "
-            "does not depend on d. Empirical \\rho is still reported."
+            "does not depend on d. Empirical \\rho is still reported; default "
+            "output filenames use the effective \\rho* implied by this \\sigma."
         ),
         default=None,
     )
