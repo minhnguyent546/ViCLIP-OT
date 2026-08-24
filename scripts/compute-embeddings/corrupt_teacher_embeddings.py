@@ -10,6 +10,8 @@ format. Two modes:
 
 * ``noise``: isotropic Gaussian noise on unit rows, then re-normalize.
 * ``random``: i.i.d. Gaussian rows, then re-normalize (structureless control).
+* ``shuffle_pair``: one joint permutation of the paired image/caption rows
+  (matched-contrast control; destroys only the semantic assignment).
 
 Formulas
 --------
@@ -61,8 +63,9 @@ are independent, hence
 Both hold for every ``d``; the large-``d`` step lives only in
 ``\\rho_true \\approx \\rho*`` (Eq. 3). Off-diagonal Gram entries therefore
 shrink by ``(\\rho*)^2`` in mean (``1/4`` at ``\\rho* = 0.5``, e.g. ``s = 0.8``
-becomes ``\\approx 0.2``), while each row's diagonal entry sits at
-``\\rho_true``.
+becomes ``\\approx 0.2``), while every diagonal entry stays exactly 1 (rows
+remain unit vectors), so the diagonal-to-neighborhood contrast grows as
+``\\rho*`` shrinks.
 
 Around that mean, per-entry fluctuations have standard deviation
 
@@ -89,6 +92,17 @@ would not.
 **Random.** Ignore input values (shape only) and draw
 
     tilde{e}_i  =  g_i / ||g_i||_2,   g_i ~ N(0, I_d).                          (7)
+
+**Pair shuffle.** Draw one permutation ``pi`` and assign both teacher embeddings
+of pair ``pi(i)`` to student pair ``i``:
+
+    (tilde{v}_i, tilde{t}_i)  =  (v_{pi(i)}, t_{pi(i)}).                        (8)
+
+This preserves within-modality geometry, teacher cross-modal consistency, the
+Gram value distribution and the diagonal structure; it destroys only the
+semantic assignment between the graph and the training samples. It therefore
+cannot be explained away by temperature scaling or diagonal mass, which makes
+it the cleanest control for "does graph content matter".
 
 Examples
 --------
@@ -282,6 +296,69 @@ def topk_neighbor_overlap(
     return {k: hits[k] / totals[k] for k in k_values}
 
 
+def shuffle_pair_rows(
+    image_unit: torch.Tensor,
+    caption_unit: torch.Tensor,
+    generator: torch.Generator,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Eq. (8): apply one joint permutation to both modality tensors."""
+    if image_unit.shape[0] != caption_unit.shape[0]:
+        raise ValueError(
+            f"row mismatch: {tuple(image_unit.shape)[0]} vs {tuple(caption_unit.shape)[0]}"
+        )
+    permutation = torch.randperm(image_unit.shape[0], generator=generator)
+    return image_unit[permutation], caption_unit[permutation]
+
+
+def prior_shape_stats(
+    unit_embeddings: torch.Tensor,
+    reference_logit_scale: float = 20.0,
+    block_size: int = 512,
+) -> dict[str, float]:
+    """Diagonality and sharpness of ``softmax(reference_logit_scale * G)``.
+
+    The reference scale approximates the observed clean-run convergence value;
+    it is a fixed reporting convention, not a fitted quantity. Rows are
+    processed in blocks so the full (N, N) matrix is never materialized.
+    """
+    num_rows = unit_embeddings.shape[0]
+    diag_sum = 0.0
+    off_sum = 0.0
+    off_sumsq = 0.0
+    off_count = 0
+    top1_count = 0
+    entropy_sum = 0.0
+    diag_mass_sum = 0.0
+    local_rows = torch.arange(block_size)
+    for start in range(0, num_rows, block_size):
+        end = min(start + block_size, num_rows)
+        block = end - start
+        sims = unit_embeddings[start:end] @ unit_embeddings.T
+        diag_vals = sims[local_rows[:block], local_rows[:block] + start]
+        probs = torch.softmax(reference_logit_scale * sims, dim=1)
+        diag_probs = probs[local_rows[:block], local_rows[:block] + start]
+        row_max_idx = sims.argmax(dim=1)
+        top1_count += int((row_max_idx == local_rows[:block] + start).sum().item())
+        entropy_sum += float(-(probs * probs.clamp_min(1e-45).log()).sum(dim=1).sum().item())
+        diag_mass_sum += float(diag_probs.sum().item())
+        diag_sum += float(diag_vals.sum().item())
+        off_mask = torch.ones(block, num_rows, dtype=torch.bool)
+        off_mask[local_rows[:block], local_rows[:block] + start] = False
+        off_vals = sims[off_mask]
+        off_sum += float(off_vals.sum().item())
+        off_sumsq += float((off_vals**2).sum().item())
+        off_count += int(off_vals.numel())
+    off_mean = off_sum / off_count
+    return {
+        "mean_diagonal": diag_sum / num_rows,
+        "mean_off_diagonal": off_mean,
+        "std_off_diagonal": math.sqrt(max(off_sumsq / off_count - off_mean**2, 0.0)),
+        "diagonal_is_row_max_frac": top1_count / num_rows,
+        "prior_mean_row_entropy_nats": entropy_sum / num_rows,
+        "prior_mean_diagonal_mass": diag_mass_sum / num_rows,
+    }
+
+
 def default_output_path(input_path: str, mode: str, rho_star: float | None) -> str:
     """Output path next to the input: ``<stem>_noise_rho{ρ*}.pt`` or ``_random.pt``."""
     if mode == "noise":
@@ -290,6 +367,8 @@ def default_output_path(input_path: str, mode: str, rho_star: float | None) -> s
         tag = f"noise_rho{rho_star:g}"
     elif mode == "random":
         tag = "random"
+    elif mode == "shuffle_pair":
+        tag = "shuffle_pair"
     else:
         raise ValueError(mode)
     stem, _ = os.path.splitext(input_path)
@@ -378,6 +457,15 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
         caption_out = corrupt_isotropic_gaussian(caption_unit, sigma, gen_caption)
         emp_rho_image = mean_row_cosine(image_unit, image_out)
         emp_rho_caption = mean_row_cosine(caption_unit, caption_out)
+    elif args.mode == "shuffle_pair":
+        sigma = None
+        rho_star_nominal = None
+        approx_rho = 0.0
+        shrinkage = 0.0
+        pair_fluctuation_std = None
+        image_out, caption_out = shuffle_pair_rows(image_unit, caption_unit, gen_image)
+        emp_rho_image = mean_row_cosine(image_unit, image_out)
+        emp_rho_caption = mean_row_cosine(caption_unit, caption_out)
     else:
         sigma = None
         rho_star_nominal = None
@@ -393,6 +481,8 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
 
     overlap_image = topk_neighbor_overlap(image_unit, image_out)
     overlap_caption = topk_neighbor_overlap(caption_unit, caption_out)
+    shape_image = prior_shape_stats(image_out)
+    shape_caption = prior_shape_stats(caption_out)
 
     # Tag filenames with the effective rho*: the nominal target when --rho_star
     # is used, else the rho* implied by an explicit --sigma override.
@@ -432,6 +522,13 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
             f"top-{k} neighbor overlap : image={overlap_image[k]:.4f}  "
             f"caption={overlap_caption[k]:.4f}  (chance {k / n_rows:.6f})"
         )
+    for name, stats in (("image", shape_image), ("caption", shape_caption)):
+        logger.info(
+            f"prior shape {name:7s}: off_diag={stats['mean_off_diagonal']:.4f}"
+            f"+/-{stats['std_off_diagonal']:.4f}  diag_top1={stats['diagonal_is_row_max_frac']:.4f}  "
+            f"entropy={stats['prior_mean_row_entropy_nats']:.3f}  "
+            f"diag_mass={stats['prior_mean_diagonal_mass']:.4f}"
+        )
     logger.info(f"output image         : {out_image}")
     logger.info(f"output caption       : {out_caption}")
 
@@ -462,6 +559,11 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
             "caption": overlap_caption,
             "chance_level_k_over_N": {str(k): k / n_rows for k in sorted(overlap_image)},
         },
+        "prior_shape_stats": {
+            "reference_logit_scale": 20.0,
+            "image": shape_image,
+            "caption": shape_caption,
+        },
         "input_image_embeddings": os.path.abspath(args.image_embeddings),
         "input_caption_embeddings": os.path.abspath(args.caption_embeddings),
         "output_image_embeddings": os.path.abspath(out_image),
@@ -479,6 +581,7 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
                 "std(<tilde_u, tilde_v>) ~= sqrt(2 * sigma^2 + sigma^4 * d) / (1 + sigma^2 * d)"
             ),
             "random": "tilde_e = g / ||g||_2, g ~ N(0, I_d)",
+            "shuffle_pair": "(tilde_v_i, tilde_t_i) = (v_pi(i), t_pi(i)), one joint permutation pi",
         },
     }
 
@@ -511,11 +614,12 @@ def corrupt_embeddings(args: argparse.Namespace) -> int:
 def add_opts(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--mode",
-        choices=("noise", "random"),
+        choices=("noise", "random", "shuffle_pair"),
         required=True,
         help=(
             "noise: isotropic Gaussian on unit rows, then re-normalize (Eq. 1). "
-            "random: i.i.d. Gaussian rows, then re-normalize (Eq. 7)."
+            "random: i.i.d. Gaussian rows, then re-normalize (Eq. 7). "
+            "shuffle_pair: joint permutation of paired rows (Eq. 8)."
         ),
     )
     parser.add_argument(
