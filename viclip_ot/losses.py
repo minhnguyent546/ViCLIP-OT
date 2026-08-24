@@ -388,7 +388,7 @@ class BatchLevelEntropicOTLoss(nn.Module):
                 transport_plan = self.sinkhorn_unbalanced(
                     metric_cost_matrix=cost_matrix,
                     reg=0.05,
-                    reg_m=0.5,  # cosine similarity scores < (1 - 0.5) = 0.5 will be considered as dissimilar/noisy
+                    reg_m=0.5,  # KL penalty weight on marginal relaxation; larger values approach balanced OT
                     max_num_iters=200,
                 )
             else:
