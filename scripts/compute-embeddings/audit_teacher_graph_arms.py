@@ -49,7 +49,10 @@ from viclip_ot.utils.training import get_retrieval_metrics
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Audit one SIGROT arm checkpoint.")
+    parser = argparse.ArgumentParser(
+        description="Audit one SIGROT arm checkpoint.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--arm_label", required=True, help="e.g. clean, noise_rho0.5, random")
     parser.add_argument("--model_config", default="./config/model.vit_base_dinov3_sbert.yaml")
