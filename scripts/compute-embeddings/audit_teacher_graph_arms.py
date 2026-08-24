@@ -15,9 +15,9 @@ reports, at the checkpoint's ACTUAL learned logit_scale:
    between student and teacher combined similarity matrices, top-k neighbor overlap,
    and effective rank (participation ratio) of student features.
 
-Feature-row alignment never relies on collate "indices"; it is derived from
-`dataset.pair_ids_by_sample_index`, which is exact because audit loaders run with
-shuffle=False.
+Feature-row alignment uses `pair_ids` emitted by ImageTextCollate, or derives them
+from the emitted replacement indices on older dataset code. This matches training when
+ImageTextDataset skips an unreadable image and substitutes the next readable sample.
 
 Example:
     uv run --no-sync python scripts/compute-embeddings/audit_teacher_graph_arms.py \
@@ -32,6 +32,7 @@ import argparse
 import json
 import math
 import os
+from typing import NamedTuple
 
 import numpy as np
 import torch
@@ -126,45 +127,12 @@ def determine_model_fmt(model_config: ViCLIPOTConfig) -> str:
     raise ValueError(f"Unsupported model name for determining model format: {model_name}")
 
 
-class PairRowMaps:
-    """
-    Deterministic mapping between dataset samples, feature rows, and pair ids for a
-    shuffle=False loader with caption_to_use="all".
-
-    Feature rows appear in dataset order: all caption rows of sample 0, then sample 1,
-    and so on. This mirrors ImageTextCollate's repeat_interleave expansion exactly.
-    """
-
-    def __init__(self, dataset: ImageTextDataset):
-        self.captions_per_sample = np.array(
-            [len(pair_ids) for pair_ids in dataset.pair_ids_by_sample_index], dtype=np.int64
-        )
-        self.num_samples = len(self.captions_per_sample)
-        self.total_pairs = int(self.captions_per_sample.sum())
-        self.first_row_of_sample = np.concatenate([[0], np.cumsum(self.captions_per_sample)[:-1]])
-        self.row_to_pair_id = np.concatenate(
-            [np.asarray(pair_ids, dtype=np.int64) for pair_ids in dataset.pair_ids_by_sample_index]
-        )
-        max_pair_id = int(self.row_to_pair_id.max())
-        self.pair_id_to_row = np.full(max_pair_id + 1, -1, dtype=np.int64)
-        self.pair_id_to_row[self.row_to_pair_id] = np.arange(self.total_pairs)
-        if (self.pair_id_to_row[self.row_to_pair_id] < 0).any():
-            raise RuntimeError("Could not construct a complete pair-id-to-feature-row map.")
-
-    def rows_for_samples(self, sample_indices: list[int]) -> np.ndarray:
-        """Consecutive feature rows covering every caption of the given samples."""
-        return np.concatenate(
-            [
-                np.arange(self.first_row_of_sample[index], self.first_row_of_sample[index] + count)
-                for index, count in zip(
-                    sample_indices, self.captions_per_sample[sample_indices], strict=True
-                )
-            ]
-        )
-
-    def sample_for_rows(self, rows: np.ndarray) -> np.ndarray:
-        """Dataset sample index for each feature row (inverse of the row layout)."""
-        return np.repeat(np.arange(self.num_samples), self.captions_per_sample)[rows]
+class CollectedFeatures(NamedTuple):
+    image_features: Tensor
+    text_features: Tensor
+    image_ids: Tensor
+    pair_ids: Tensor
+    batch_pair_counts: list[int]
 
 
 @torch.inference_mode()
@@ -172,21 +140,54 @@ def collect_features(
     model: ViCLIPOT,
     data_loader: DataLoader,  # pyright: ignore[reportMissingTypeArgument]
     device: torch.device,
-) -> tuple[Tensor, Tensor, Tensor]:
+) -> CollectedFeatures:
+    """
+    Preserve the exact pair IDs used by training for every emitted feature row.
+
+    This matters for old UIT-OpenViIC copies: a truncated image can cause
+    ImageTextDataset.__getitem__ to substitute the next readable sample. Static
+    metadata positions then no longer match feature rows. New dataset code exposes
+    batch["pair_ids"]; older code returns replacement indices, which map back through
+    data_loader.dataset.get_pair_ids() to the same teacher rows.
+    """
     all_image_features = []
     all_text_features = []
     all_image_ids = []
+    all_pair_ids = []
+    batch_pair_counts = []
     for batch in data_loader:
+        if "pair_ids" in batch:
+            pair_ids = torch.tensor(batch["pair_ids"], dtype=torch.int64)
+        else:
+            sample_indices = list(batch["indices"])
+            pair_ids = torch.tensor(
+                data_loader.dataset.get_pair_ids(sample_indices),
+                dtype=torch.int64,  # pyright: ignore[reportAttributeAccessIssue]
+            )
         images = batch["images"].to(device=device, non_blocking=True)
         text_inputs = batch["text_inputs"].to(device=device, non_blocking=True)
         model_outputs = model(images, text_inputs)
-        all_image_features.append(model_outputs["image_features"].float().cpu())
-        all_text_features.append(model_outputs["text_features"].float().cpu())
-        all_image_ids.append(batch["image_ids"])
-    return (
-        torch.cat(all_image_features, dim=0),
-        torch.cat(all_text_features, dim=0),
-        torch.cat(all_image_ids, dim=0),
+        image_features = model_outputs["image_features"].float().cpu()
+        text_features = model_outputs["text_features"].float().cpu()
+        image_ids = batch["image_ids"].cpu()
+        num_rows = image_features.shape[0]
+        if text_features.shape[0] != num_rows or image_ids.shape[0] != num_rows:
+            raise RuntimeError("Collected image, text, and image-id row counts disagree.")
+        if pair_ids.shape[0] != num_rows:
+            raise RuntimeError(
+                f"The collate emitted {pair_ids.shape[0]} pair IDs for {num_rows} feature rows."
+            )
+        all_image_features.append(image_features)
+        all_text_features.append(text_features)
+        all_image_ids.append(image_ids)
+        all_pair_ids.append(pair_ids)
+        batch_pair_counts.append(num_rows)
+    return CollectedFeatures(
+        image_features=torch.cat(all_image_features, dim=0),
+        text_features=torch.cat(all_text_features, dim=0),
+        image_ids=torch.cat(all_image_ids, dim=0),
+        pair_ids=torch.cat(all_pair_ids, dim=0),
+        batch_pair_counts=batch_pair_counts,
     )
 
 
@@ -401,20 +402,34 @@ def effective_rank(features: Tensor, max_samples: int = 2000) -> float:
 def validate_teacher_files(
     teacher_image: Tensor,
     teacher_caption: Tensor,
-    row_maps: PairRowMaps,
+    metadata_pair_count: int,
+    emitted_pair_ids: Tensor,
 ) -> dict[str, object]:
-    total_pairs = row_maps.total_pairs
-    expected_pair_ids = np.arange(total_pairs)
-    if not np.array_equal(row_maps.row_to_pair_id, expected_pair_ids):
+    """
+    Validate files against metadata, then report what the loader actually emitted.
+
+    Teacher tensors are made from metadata order, so their row count must match the
+    metadata pair count. Emitted rows can be fewer when ImageTextDataset skips an
+    unreadable image; that is valid because training indexes teachers with these exact
+    emitted pair IDs.
+    """
+    if (
+        teacher_caption.shape[0] != metadata_pair_count
+        or teacher_image.shape[0] != metadata_pair_count
+    ):
         raise ValueError(
-            "Train pair ids are not dense and ordered from 0 to N-1. The training graph "
-            "indexes teacher rows by these pair positions, so audit alignment is not provable."
+            f"Teacher row count must equal the metadata pair count ({metadata_pair_count}), got "
+            f"image={teacher_image.shape[0]}, caption={teacher_caption.shape[0]}. The teacher "
+            "files were generated for a different dataset revision."
         )
-    if teacher_caption.shape[0] != total_pairs or teacher_image.shape[0] != total_pairs:
+    if emitted_pair_ids.numel() == 0:
+        raise ValueError("The train loader emitted no pair IDs.")
+    min_pair_id = emitted_pair_ids.min().item()
+    max_pair_id = emitted_pair_ids.max().item()
+    if min_pair_id < 0 or max_pair_id >= metadata_pair_count:
         raise ValueError(
-            f"Teacher row count must equal the current train-pair count ({total_pairs}), got "
-            f"image={teacher_image.shape[0]}, caption={teacher_caption.shape[0]}. Extra or "
-            "missing rows can silently shift teacher graphs away from training samples."
+            f"Emitted pair IDs must be within [0, {metadata_pair_count - 1}], got "
+            f"min={min_pair_id}, max={max_pair_id}."
         )
 
     caption_norm_error = (teacher_caption.norm(dim=-1) - 1.0).abs().max().item()
@@ -427,11 +442,17 @@ def validate_teacher_files(
     if not (torch.isfinite(teacher_image).all() and torch.isfinite(teacher_caption).all()):
         raise ValueError("Teacher embeddings contain non-finite values.")
 
+    pair_id_counts = torch.bincount(emitted_pair_ids, minlength=metadata_pair_count)
+    missing_pair_ids = (pair_id_counts == 0).nonzero().flatten()
     return {
         "teacher_image_shape": list(teacher_image.shape),
         "teacher_caption_shape": list(teacher_caption.shape),
-        "total_train_pairs": total_pairs,
-        "max_train_pair_id": int(row_maps.row_to_pair_id.max()),
+        "metadata_pair_count": metadata_pair_count,
+        "emitted_feature_rows": emitted_pair_ids.numel(),
+        "unique_emitted_pair_ids": (pair_id_counts > 0).sum().item(),
+        "duplicate_emitted_rows": (pair_id_counts - 1).clamp_min(0).sum().item(),
+        "missing_metadata_pair_ids_count": missing_pair_ids.numel(),
+        "missing_metadata_pair_ids_first_20": missing_pair_ids[:20].tolist(),
         "max_unit_norm_deviation_image": image_norm_error,
         "max_unit_norm_deviation_caption": caption_norm_error,
     }
@@ -515,16 +536,14 @@ def main() -> None:
     )
 
     logger.info("Encoding test split")
-    test_image_features, test_text_features, test_image_ids = collect_features(
-        model, test_loader, device
-    )
+    test_features = collect_features(model, test_loader, device)
     test_retrieval_metrics = get_retrieval_metrics(
-        image_features=test_image_features,
-        text_features=test_text_features,
+        image_features=test_features.image_features,
+        text_features=test_features.text_features,
         logit_scale=torch.tensor(logit_scale_value),
-        image_ids=test_image_ids,
+        image_ids=test_features.image_ids,
     )
-    chance_levels = exact_chance_levels(test_image_ids)
+    chance_levels = exact_chance_levels(test_features.image_ids)
 
     signal_to_chance_t2i = test_retrieval_metrics["t2i_R__1"] / chance_levels["chance_t2i_R__1"]
     signal_to_chance_i2t = test_retrieval_metrics["i2t_R__1"] / chance_levels["chance_i2t_R__1"]
@@ -546,7 +565,6 @@ def main() -> None:
         image_transforms=eval_transforms,
         model_fmt=model_fmt,
     )
-    row_maps = PairRowMaps(train_dataset)
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.loader_batch_size,
@@ -555,14 +573,12 @@ def main() -> None:
         collate_fn=collate_fn,
     )
     logger.info("Encoding train split with deterministic transforms (this is the slow part)")
-    train_image_features, train_text_features, train_image_ids = collect_features(
-        model, train_loader, device
-    )
+    train_features = collect_features(model, train_loader, device)
 
     train_gallery_results = chunked_train_gallery_retrieval(
-        text_features=train_text_features,
-        unique_image_features=train_image_features,
-        image_ids=train_image_ids,
+        text_features=train_features.text_features,
+        unique_image_features=train_features.image_features,
+        image_ids=train_features.image_ids,
         max_queries=args.max_train_gallery_queries,
         device=device,
     )
@@ -573,7 +589,10 @@ def main() -> None:
 
     teacher_image = torch.load(args.teacher_image_embeddings, map_location="cpu").float()
     teacher_caption = torch.load(args.teacher_caption_embeddings, map_location="cpu").float()
-    teacher_validation = validate_teacher_files(teacher_image, teacher_caption, row_maps)
+    metadata_pair_count = sum(len(pair_ids) for pair_ids in train_dataset.pair_ids_by_sample_index)
+    teacher_validation = validate_teacher_files(
+        teacher_image, teacher_caption, metadata_pair_count, train_features.pair_ids
+    )
     logger.info(
         f"Teacher embeddings validated: image {teacher_validation['teacher_image_shape']}, "
         f"caption {teacher_validation['teacher_caption_shape']}"
@@ -581,29 +600,30 @@ def main() -> None:
 
     ot_loss = losses.BatchLevelEntropicOTLoss(sinkhorn_solver="sinkhorn_unbalanced")
 
-    # GradCache concatenates eight shuffled loader batches before building one plan.
-    # Use fixed contiguous samples here for reproducibility, with the same total number
-    # of source images per plan. Thus each audit plan has the same pair-level shape as
-    # an ordinary full training update, even though its image augmentations differ.
-    samples_per_update = args.loader_batch_size * args.gradient_accum_steps
+    # GradCache concatenates eight loader batches before building one plan. Reuse the
+    # emitted pair rows from those batches. This matches training even when the dataset
+    # substitutes a readable sample for a truncated image.
+    batch_row_offsets = np.concatenate([[0], np.cumsum(train_features.batch_pair_counts)])
     audit_batches: list[dict[str, float]] = []
     for update_number in range(args.num_audit_updates):
-        start_sample = update_number * samples_per_update
-        if start_sample >= row_maps.num_samples:
-            break
-        sample_indices = list(
-            range(start_sample, min(start_sample + samples_per_update, row_maps.num_samples))
+        start_batch = update_number * args.gradient_accum_steps
+        end_batch = min(
+            start_batch + args.gradient_accum_steps, len(train_features.batch_pair_counts)
         )
-        rows = row_maps.rows_for_samples(sample_indices)
-        pair_ids = row_maps.row_to_pair_id[rows].tolist()
+        if start_batch >= end_batch:
+            break
+        start_row = int(batch_row_offsets[start_batch])
+        end_row = int(batch_row_offsets[end_batch])
+        rows = torch.arange(start_row, end_row)
+        pair_ids = train_features.pair_ids[rows].tolist()
         batch_stats = audit_prior_and_plan(
             ot_loss=ot_loss,
             logit_scale_value=logit_scale_value,
             teacher_image=teacher_image,
             teacher_caption=teacher_caption,
             pair_ids=pair_ids,
-            student_image=train_image_features[torch.from_numpy(rows)],
-            student_text=train_text_features[torch.from_numpy(rows)],
+            student_image=train_features.image_features[rows],
+            student_text=train_features.text_features[rows],
         )
         audit_batches.append(batch_stats)
 
@@ -617,36 +637,38 @@ def main() -> None:
     )
 
     generator = torch.Generator().manual_seed(args.seed)
-    num_subsample = min(args.subsample_size, row_maps.total_pairs)
+    num_subsample = min(args.subsample_size, train_features.pair_ids.numel())
     if num_subsample <= 10:
         raise ValueError("--subsample_size must select at least 11 pairs for top-10 overlap.")
-    selected_pair_positions = torch.randperm(row_maps.total_pairs, generator=generator)[
+    selected_rows = torch.randperm(train_features.pair_ids.numel(), generator=generator)[
         :num_subsample
-    ].numpy()
-    selected_pairs = row_maps.row_to_pair_id[selected_pair_positions]
-    selected_rows = row_maps.pair_id_to_row[selected_pairs]
-    assert (selected_rows >= 0).all()
+    ]
+    selected_pairs = train_features.pair_ids[selected_rows]
     teacher_combined_sub = combine_cross_modality(
         teacher_caption[selected_pairs] @ teacher_caption[selected_pairs].t(),
         teacher_image[selected_pairs] @ teacher_image[selected_pairs].t(),
         teacher_caption[selected_pairs] @ teacher_image[selected_pairs].t(),
         teacher_image[selected_pairs] @ teacher_caption[selected_pairs].t(),
     )
-    student_rows_tensor = torch.from_numpy(selected_rows)
     student_combined_sub = combine_cross_modality(
-        train_text_features[student_rows_tensor] @ train_text_features[student_rows_tensor].t(),
-        train_image_features[student_rows_tensor] @ train_image_features[student_rows_tensor].t(),
-        train_text_features[student_rows_tensor] @ train_image_features[student_rows_tensor].t(),
-        train_image_features[student_rows_tensor] @ train_text_features[student_rows_tensor].t(),
+        train_features.text_features[selected_rows]
+        @ train_features.text_features[selected_rows].t(),
+        train_features.image_features[selected_rows]
+        @ train_features.image_features[selected_rows].t(),
+        train_features.text_features[selected_rows]
+        @ train_features.image_features[selected_rows].t(),
+        train_features.image_features[selected_rows]
+        @ train_features.text_features[selected_rows].t(),
     )
     recovery = graph_recovery_stats(teacher_combined_sub, student_combined_sub)
-    selected_samples = np.unique(row_maps.sample_for_rows(selected_rows))
-    unique_sample_first_rows = torch.from_numpy(row_maps.first_row_of_sample[selected_samples])
+    selected_image_ids = train_features.image_ids[selected_rows]
+    _unique_ids, first_positions = np.unique(selected_image_ids.numpy(), return_index=True)
+    unique_image_rows = selected_rows[torch.from_numpy(first_positions)]
     recovery["student_image_effective_rank"] = effective_rank(
-        train_image_features[unique_sample_first_rows]
+        train_features.image_features[unique_image_rows]
     )
     recovery["student_text_effective_rank"] = effective_rank(
-        train_text_features[student_rows_tensor]
+        train_features.text_features[selected_rows]
     )
     logger.info(f"Graph recovery: {json.dumps({k: round(v, 6) for k, v in recovery.items()})}")
 
