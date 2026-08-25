@@ -61,6 +61,10 @@ vllm = [
 flash-attn = [
     "flash-attn",
 ]
+jina-training = [
+    "flash-attn",
+    "xformers==0.0.33.post2",
+]
 
 [tool.uv]
 no-build-isolation-package = ["flash-attn"]
@@ -114,4 +118,5 @@ line-ending = "lf"
 [tool.uv.sources]
 flash-attn = [
     { group = "flash-attn", url = "https://huggingface.co/datasets/minhnguyent546/flash-attn-v2.8.3-glibc-2.31/resolve/68b35e77a6899b3670d5d7c29b6f42b6b6edbd95/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" },
+    { group = "jina-training", url = "https://huggingface.co/datasets/minhnguyent546/flash-attn-v2.8.3-glibc-2.31/resolve/68b35e77a6899b3670d5d7c29b6f42b6b6edbd95/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" },
 ]

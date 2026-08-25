@@ -3,10 +3,10 @@ revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'linux'",
-    "python_full_version == '3.13.*' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and sys_platform == 'linux'",
     "python_full_version >= '3.14' and sys_platform != 'linux'",
+    "python_full_version == '3.13.*' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and sys_platform != 'linux'",
+    "python_full_version < '3.13' and sys_platform == 'linux'",
     "python_full_version < '3.13' and sys_platform != 'linux'",
 ]
 
@@ -5802,6 +5802,10 @@ dev = [
 flash-attn = [
     { name = "flash-attn", marker = "python_full_version < '3.13'" },
 ]
+jina-training = [
+    { name = "flash-attn", marker = "python_full_version < '3.13'" },
+    { name = "xformers" },
+]
 vllm = [
     { name = "vllm" },
 ]
@@ -5850,6 +5854,10 @@ dev = [
     { name = "tabulate", specifier = ">=0.9.0" },
 ]
 flash-attn = [{ name = "flash-attn", url = "https://huggingface.co/datasets/minhnguyent546/flash-attn-v2.8.3-glibc-2.31/resolve/68b35e77a6899b3670d5d7c29b6f42b6b6edbd95/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" }]
+jina-training = [
+    { name = "flash-attn", url = "https://huggingface.co/datasets/minhnguyent546/flash-attn-v2.8.3-glibc-2.31/resolve/68b35e77a6899b3670d5d7c29b6f42b6b6edbd95/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" },
+    { name = "xformers", specifier = "==0.0.33.post2" },
+]
 vllm = [{ name = "vllm", specifier = "==0.16.0" }]
 
 [[package]]
@@ -6180,6 +6188,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b3/8f/705086c9d734d3b663af0e9bb3d4de6578d08f46b1b101c2442fd9aecaa2/win32_setctime-1.2.0.tar.gz", hash = "sha256:ae1fdf948f5640aae05c511ade119313fb6a30d7eabe25fef9764dca5873c4c0", size = 4867, upload-time = "2024-12-07T15:28:28.314Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e1/07/c6fe3ad3e685340704d314d765b7912993bcb8dc198f0e7a89382d37974b/win32_setctime-1.2.0-py3-none-any.whl", hash = "sha256:95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390", size = 4083, upload-time = "2024-12-07T15:28:26.465Z" },
+]
+
+[[package]]
+name = "xformers"
+version = "0.0.33.post2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0b/69/403e963d35f1b0c52a1b3127e0bc4e94e7e50ecee8c6684a8abe40e6638e/xformers-0.0.33.post2.tar.gz", hash = "sha256:647ddf26578d2b8643230467ef1f0fbfef0bbe556a546bd27a70d4855d3433e1", size = 14783914, upload-time = "2025-12-04T18:52:42.572Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/c8/2957d8a8bf089a4e57f046867d4c9b31fc2e1d16013bc57cd7ae651a65b5/xformers-0.0.33.post2-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:9ea6032defa60395559b6a446c2ae945236707e98daabd88fea57cd08671c174", size = 122883631, upload-time = "2025-12-04T18:52:35.318Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/72/057e48a3c2187f74202b3cca97e9f8a844342122909c93314fd641daa5d0/xformers-0.0.33.post2-cp39-abi3-win_amd64.whl", hash = "sha256:4a0a59a0c698a483f13ecad967dbbe71386827985e80cc373bec4cdf9aed59cd", size = 105088221, upload-time = "2025-12-04T18:52:39.699Z" },
 ]
 
 [[package]]
