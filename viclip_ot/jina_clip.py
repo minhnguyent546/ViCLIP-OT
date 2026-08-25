@@ -282,7 +282,6 @@ class JinaCLIPV2LoRA(nn.Module):
         self.load_state_dict(state_dict, strict=False)
 
     def forward(self, images: Tensor, text_inputs: Any) -> dict[str, Tensor]:
-        # self.logit_scale.data.clamp_(min=math.log(1 / 100), max=math.log(100))
         output = {
             "image_features": self.encode_image(images, normalize=True),
             "text_features": self.encode_text(text_inputs, normalize=True),
