@@ -268,6 +268,13 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         help="Number of gradient accumulation steps",
         default=1,
     )
+    group.add_argument(
+        "--train_caption_to_use",
+        type=str,
+        choices=["first", "random", "all"],
+        help="Which captions to include for each training image",
+        default="all",
+    )
 
     # optimizer
     group.add_argument(

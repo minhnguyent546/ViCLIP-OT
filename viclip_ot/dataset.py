@@ -1,3 +1,5 @@
+# pyright: reportPrivateImportUsage=false
+
 import json
 import os
 from collections import defaultdict
@@ -191,27 +193,48 @@ class ImageTextCollate:
         tokenizer,
         max_length: int = 2048,
         caption_to_use: Literal["first", "random", "all"] = "all",
+        pair_ids_by_sample_index: list[list[int]] | None = None,
     ):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.caption_to_use = caption_to_use
+        self.pair_ids_by_sample_index = pair_ids_by_sample_index
 
     def __call__(self, batch):
         images, captions, image_ids, indices = zip(*batch, strict=True)
+        pair_ids_by_image = None
+        if self.pair_ids_by_sample_index is not None:
+            pair_ids_by_image = [self.pair_ids_by_sample_index[index] for index in indices]
 
         images = torch.stack(images)
         image_ids = torch.tensor(image_ids, dtype=torch.int64)
 
+        pair_ids = None
         if self.caption_to_use == "first":
             captions = [caption[0] for caption in captions]
+            if pair_ids_by_image is not None:
+                pair_ids = [image_pair_ids[0] for image_pair_ids in pair_ids_by_image]
         elif self.caption_to_use == "random":
-            captions = [caption[np.random.randint(0, len(caption) - 1)] for caption in captions]
+            selected_captions = []
+            selected_pair_ids = []
+            for sample_index, caption_list in enumerate(captions):
+                selected_index = np.random.randint(0, len(caption_list))
+                selected_captions.append(caption_list[selected_index])
+                if pair_ids_by_image is not None:
+                    selected_pair_ids.append(pair_ids_by_image[sample_index][selected_index])
+            captions = selected_captions
+            if pair_ids_by_image is not None:
+                pair_ids = selected_pair_ids
         elif self.caption_to_use == "all":
             # flatten caption and repeat images accordingly
             flat_captions = []
             repeat_counts = []
-            for caption_list in captions:
+            for sample_index, caption_list in enumerate(captions):
                 flat_captions.extend(caption_list)
+                if pair_ids_by_image is not None:
+                    if pair_ids is None:
+                        pair_ids = []
+                    pair_ids.extend(pair_ids_by_image[sample_index])
                 repeat_counts.append(len(caption_list))
 
             # Repeat images to match flattened captions
@@ -232,9 +255,12 @@ class ImageTextCollate:
             return_tensors="pt",
         )
 
-        return {
+        collated_batch = {
             "images": images,
             "text_inputs": text_inputs,
             "image_ids": image_ids,
             "indices": indices,
         }
+        if pair_ids is not None:
+            collated_batch["pair_ids"] = pair_ids
+        return collated_batch
