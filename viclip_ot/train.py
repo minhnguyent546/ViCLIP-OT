@@ -6,7 +6,6 @@ import subprocess
 import sys
 import time
 from datetime import datetime
-from typing import Literal
 
 import torch
 import torch.nn as nn
@@ -17,11 +16,10 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm.autonotebook import tqdm
 
-import viclip_ot.constants as C
 import viclip_ot.losses as losses
 import viclip_ot.utils as utils
 from viclip_ot.dataset import ImageTextCollate, ImageTextDataset
-from viclip_ot.model import ViCLIPOT, ViCLIPOTConfig
+from viclip_ot.model_factory import create_training_model
 from viclip_ot.opts import add_training_opts
 from viclip_ot.utils.logger import init_logger, logger
 from viclip_ot.utils.metric import AverageMeter
@@ -87,11 +85,12 @@ def train_model(args: argparse.Namespace) -> None:
     logger.info(f"Using device: {device}")
 
     # creating model
-    model_config = ViCLIPOTConfig.model_validate(utils.load_yaml_file(args.model_config))
+    model_bundle = create_training_model(args.model_config)
+    model_config = model_bundle.config
     logger.info(f"Model config: {model_config}")
-    model = ViCLIPOT(config=model_config)
-    tokenizer = model.text_encoder.tokenizer
-    logger.info(f"Model: {model}")
+    model = model_bundle.model
+    tokenizer = model_bundle.tokenizer
+    logger.info(f"Model class: {type(model).__name__}")
     model.to(device)
 
     # loss fun
@@ -233,20 +232,51 @@ def train_model(args: argparse.Namespace) -> None:
 
     if args.linear_probing:
         raise NotImplementedError("Loading from checkpoint is not implemented yet.")
-        logger.info("Linear probing enabled")
+
+    def load_model_checkpoint_state(state_dict: dict[str, Tensor]) -> None:
+        if model_bundle.save_trainable_state_only:
+            model.load_checkpoint_state_dict(  # pyright: ignore[reportAttributeAccessIssue]
+                state_dict
+            )
+        else:
+            model.load_state_dict(state_dict, strict=True)
 
     if args.from_checkpoint is not None:
         logger.info(f"Loading model from checkpoint: {args.from_checkpoint}")
         checkpoint = torch.load(args.from_checkpoint, map_location=device, weights_only=False)
-        model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+        load_model_checkpoint_state(checkpoint["model_state_dict"])
 
+    if not model_bundle.supports_tower_locking and (args.lock_image or args.lock_text):
+        raise ValueError(
+            "The selected model uses frozen backbones with LoRA adapters and does not support "
+            "--lock_image or --lock_text."
+        )
     if args.lock_image:
-        model.lock_image_tower(
+        model.lock_image_tower(  # pyright: ignore[reportAttributeAccessIssue]
             last_unfreeze_groups=args.lock_image_last_unfreeze_groups,
             freeze_bn_stats=args.lock_image_freeze_bn_stats,
         )
     if args.lock_text:
-        model.lock_text_tower(unfreeze_dense=args.lock_text_unfreeze_dense)
+        model.lock_text_tower(  # pyright: ignore[reportAttributeAccessIssue]
+            unfreeze_dense=args.lock_text_unfreeze_dense
+        )
+
+    if model_bundle.required_image_size is not None:
+        if args.train_crop_size != model_bundle.required_image_size:
+            raise ValueError(
+                f"The selected model requires --train_crop_size "
+                f"{model_bundle.required_image_size}, found {args.train_crop_size}."
+            )
+        if args.eval_crop_size != model_bundle.required_image_size:
+            raise ValueError(
+                f"The selected model requires --eval_crop_size "
+                f"{model_bundle.required_image_size}, found {args.eval_crop_size}."
+            )
+        if args.eval_resize_size < model_bundle.required_image_size:
+            raise ValueError(
+                f"--eval_resize_size must be at least {model_bundle.required_image_size} "
+                "for the selected model."
+            )
 
     # loading dataset
     train_transforms = v2.Compose(
@@ -261,8 +291,8 @@ def train_model(args: argparse.Namespace) -> None:
             v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.0),
             v2.ToTensor(),
             v2.Normalize(
-                mean=C.IMAGENET_DEFAULT_MEAN,
-                std=C.IMAGENET_DEFAULT_STD,
+                mean=model_bundle.image_mean,
+                std=model_bundle.image_std,
             ),
         ]
     )
@@ -272,46 +302,31 @@ def train_model(args: argparse.Namespace) -> None:
             v2.CenterCrop(size=args.eval_crop_size),
             v2.ToTensor(),
             v2.Normalize(
-                mean=C.IMAGENET_DEFAULT_MEAN,
-                std=C.IMAGENET_DEFAULT_STD,
+                mean=model_bundle.image_mean,
+                std=model_bundle.image_std,
             ),
         ]
     )
 
-    def model_fmt() -> Literal["gemma", "e5", "qwen3", "bge", "sbert"]:
-        model_name = model_config.text_config.model_name
-        if "gemma" in model_name.lower():  # google/embeddinggemma-300m
-            return "gemma"
-        elif "e5" in model_name.lower():  # intfloat/multilingual-e5-large
-            return "e5"
-        elif "qwen" in model_name.lower():  # Qwen/Qwen3-Embedding-0.6B
-            return "qwen3"
-        elif "bge" in model_name.lower():  # BAAI/bge-m3
-            return "bge"
-        elif "sbert" in model_name.lower():  # keepitreal/vietnamese-sbert
-            return "sbert"
-        else:
-            raise ValueError(f"Unsupported model name for determining model format: {model_name}")
-
-    logger.info(f"Determined model format: {model_fmt()}")
+    logger.info(f"Determined model format: {model_bundle.caption_format}")
 
     train_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
         metadata_json_file=f"{args.train_split_name}.json",
         image_transforms=train_transforms,
-        model_fmt=model_fmt(),
+        model_fmt=model_bundle.caption_format,
     )
     test_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
         metadata_json_file=f"{args.test_split_name}.json",
         image_transforms=eval_transforms,
-        model_fmt=model_fmt(),
+        model_fmt=model_bundle.caption_format,
     )
     val_dataset = ImageTextDataset(
         root_dir=args.dataset_dir,
         metadata_json_file=f"{args.val_split_name}.json",
         image_transforms=eval_transforms,
-        model_fmt=model_fmt(),
+        model_fmt=model_bundle.caption_format,
     )
 
     logger.info(
@@ -320,8 +335,23 @@ def train_model(args: argparse.Namespace) -> None:
         f"val_size = {len(val_dataset)} "
     )
 
-    collate_fun = ImageTextCollate(
-        tokenizer=tokenizer, max_length=model_config.max_length, caption_to_use="all"
+    train_collate_fun = ImageTextCollate(
+        tokenizer=tokenizer,
+        max_length=model_bundle.max_length,
+        caption_to_use=args.train_caption_to_use,
+        pair_ids_by_sample_index=train_dataset.pair_ids_by_sample_index,
+    )
+    eval_collate_fun = ImageTextCollate(
+        tokenizer=tokenizer,
+        max_length=model_bundle.max_length,
+        caption_to_use="all",
+        pair_ids_by_sample_index=val_dataset.pair_ids_by_sample_index,
+    )
+    test_collate_fun = ImageTextCollate(
+        tokenizer=tokenizer,
+        max_length=model_bundle.max_length,
+        caption_to_use="all",
+        pair_ids_by_sample_index=test_dataset.pair_ids_by_sample_index,
     )
     # creating data loaders
     train_data_loader = DataLoader(
@@ -330,8 +360,8 @@ def train_model(args: argparse.Namespace) -> None:
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=True,
-        collate_fn=collate_fun,
-        persistent_workers=True,
+        collate_fn=train_collate_fun,
+        persistent_workers=args.num_workers > 0,
     )
     test_data_loader = DataLoader(
         test_dataset,
@@ -339,8 +369,8 @@ def train_model(args: argparse.Namespace) -> None:
         shuffle=False,
         num_workers=args.num_workers,
         pin_memory=True,
-        collate_fn=collate_fun,
-        persistent_workers=True,
+        collate_fn=test_collate_fun,
+        persistent_workers=args.num_workers > 0,
     )
     val_data_loader = DataLoader(
         val_dataset,
@@ -348,8 +378,8 @@ def train_model(args: argparse.Namespace) -> None:
         shuffle=False,
         num_workers=args.num_workers,
         pin_memory=True,
-        collate_fn=collate_fun,
-        persistent_workers=True,
+        collate_fn=eval_collate_fun,
+        persistent_workers=args.num_workers > 0,
     )
 
     # mixed precision training
@@ -415,9 +445,12 @@ def train_model(args: argparse.Namespace) -> None:
 
     def _run_test_only(data_loader: DataLoader) -> None:  # pyright: ignore[reportMissingTypeArgument]
         test_start_time = time.perf_counter()
+        test_criterion = (
+            eval_criterion if model_bundle.test_only_uses_eval_criterion else criterion
+        )
         test_results = eval_model(
             model=model,
-            criterion=criterion,
+            criterion=test_criterion,
             eval_data_loader=data_loader,
             device=device,
         )
@@ -465,17 +498,8 @@ def train_model(args: argparse.Namespace) -> None:
         )
     )
 
-    backbone_prefixes = (
-        "text_encoder.encoder.",
-        "image_encoder.trunk.",
-    )
-    adapters_prefixes = (
-        "text_encoder.dense.",
-        "text_encoder.fc.",
-        "image_encoder.head.",
-        "logit_scale",
-        "logit_bias",
-    )
+    backbone_prefixes = model_bundle.backbone_prefixes
+    adapters_prefixes = model_bundle.adapter_prefixes
 
     def has_prefix(name: str, prefixes: tuple[str, ...]) -> bool:
         return any(name.startswith(p) for p in prefixes)
@@ -1013,8 +1037,12 @@ def train_model(args: argparse.Namespace) -> None:
             checkpoint_dir,
             f"model_epoch_{epoch + 1}.pth",
         )
+        if model_bundle.save_trainable_state_only:
+            model_state_dict = model.get_checkpoint_state_dict()  # pyright: ignore[reportAttributeAccessIssue]
+        else:
+            model_state_dict = model.state_dict()
         state_dict_to_save = {
-            "model_state_dict": model.state_dict(),
+            "model_state_dict": model_state_dict,
             "val_results": val_results,
             "epoch": epoch,
             "global_step": global_step,
@@ -1075,7 +1103,7 @@ def train_model(args: argparse.Namespace) -> None:
         logger.info("Loading best checkpoint for final evaluation on test set...")
 
         checkpoint = torch.load(best_checkpoint_path, map_location=device, weights_only=False)
-        model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+        load_model_checkpoint_state(checkpoint["model_state_dict"])
 
         _run_test_only(test_data_loader)
 
