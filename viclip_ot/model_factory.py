@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import viclip_ot.constants as C
+from viclip_ot.jina_clip import JinaCLIPV2Config, JinaCLIPV2LoRA
 from viclip_ot.model import ViCLIPOT, ViCLIPOTConfig
 from viclip_ot.utils import load_yaml_file
 
@@ -68,6 +69,30 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             supports_tower_locking=True,
             save_trainable_state_only=False,
             test_only_uses_eval_criterion=False,
+        )
+
+    if model_type == "jina_clip_v2":
+        config = JinaCLIPV2Config.model_validate(raw_config)
+        model = JinaCLIPV2LoRA(config=config)
+        return TrainingModelBundle(
+            model=model,
+            config=config,
+            tokenizer=model.tokenizer,
+            max_length=config.max_length,
+            caption_format="plain",
+            image_mean=C.OPENAI_CLIP_MEAN,
+            image_std=C.OPENAI_CLIP_STD,
+            required_image_size=config.image_size,
+            backbone_prefixes=(),
+            adapter_prefixes=(
+                "jina_model.text_model.",
+                "jina_model.vision_model.",
+                "jina_model.logit_scale",
+                "logit_bias",
+            ),
+            supports_tower_locking=False,
+            save_trainable_state_only=True,
+            test_only_uses_eval_criterion=True,
         )
 
     raise ValueError(f"Unsupported model_type: {model_type}")
