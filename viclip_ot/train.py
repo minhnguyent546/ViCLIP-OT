@@ -116,7 +116,7 @@ def train_model(args: argparse.Namespace) -> None:
             f"Using similarity graph regularized OT with precomputed caption embeddings from {args.precomputed_caption_embeddings_path}.",
         )
         caption_embeddings = torch.load(
-            args.precomputed_caption_embeddings_path, map_location=device
+            args.precomputed_caption_embeddings_path, map_location="cpu"
         )  # already normalized
 
         if (
@@ -132,7 +132,7 @@ def train_model(args: argparse.Namespace) -> None:
             f"Using similarity graph regularized OT with precomputed image embeddings from {args.precomputed_image_embeddings_path}.",
         )
         image_embeddings = torch.load(
-            args.precomputed_image_embeddings_path, map_location=device
+            args.precomputed_image_embeddings_path, map_location="cpu"
         )  # already normalized
 
         logger.info(
@@ -708,20 +708,18 @@ def train_model(args: argparse.Namespace) -> None:
                     and caption_embeddings is not None
                     and image_embeddings is not None
                 ):
-                    sample_indices = batches[0]["indices"]
-                    pair_ids = train_data_loader.dataset.get_pair_ids(sample_indices)  # pyright: ignore
+                    pair_ids = batches[0]["pair_ids"]
+                    batch_caption_embeddings = caption_embeddings[pair_ids].to(
+                        device=device, non_blocking=True
+                    )
+                    batch_image_embeddings = image_embeddings[pair_ids].to(
+                        device=device, non_blocking=True
+                    )
 
-                    sim_matrix_text = (
-                        caption_embeddings[pair_ids] @ caption_embeddings[pair_ids].t()
-                    )
-                    sim_matrix_image = image_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
-
-                    sim_matrix_text2image = (
-                        caption_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
-                    )
-                    sim_matrix_image2text = (
-                        image_embeddings[pair_ids] @ caption_embeddings[pair_ids].t()
-                    )
+                    sim_matrix_text = batch_caption_embeddings @ batch_caption_embeddings.t()
+                    sim_matrix_image = batch_image_embeddings @ batch_image_embeddings.t()
+                    sim_matrix_text2image = batch_caption_embeddings @ batch_image_embeddings.t()
+                    sim_matrix_image2text = batch_image_embeddings @ batch_caption_embeddings.t()
 
                     sim_matrix = _combine_sim_matrices(
                         sim_matrix_text,
@@ -778,7 +776,7 @@ def train_model(args: argparse.Namespace) -> None:
                                 "images": images,
                                 "text_inputs": text_inputs,
                                 "image_ids": batch["image_ids"],
-                                "indices": batch["indices"],
+                                "pair_ids": batch["pair_ids"],
                             }
                         )
                         cached_image_features.append(model_outputs["image_features"])
@@ -799,20 +797,20 @@ def train_model(args: argparse.Namespace) -> None:
                     and caption_embeddings is not None
                     and image_embeddings is not None
                 ):
-                    all_indices = [idx for b in moved_batches for idx in b["indices"]]
-                    pair_ids = train_data_loader.dataset.get_pair_ids(all_indices)  # pyright: ignore
+                    pair_ids = [
+                        pair_id for batch in moved_batches for pair_id in batch["pair_ids"]
+                    ]
+                    batch_caption_embeddings = caption_embeddings[pair_ids].to(
+                        device=device, non_blocking=True
+                    )
+                    batch_image_embeddings = image_embeddings[pair_ids].to(
+                        device=device, non_blocking=True
+                    )
 
-                    sim_matrix_text = (
-                        caption_embeddings[pair_ids] @ caption_embeddings[pair_ids].t()
-                    )
-                    sim_matrix_image = image_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
-
-                    sim_matrix_text2image = (
-                        caption_embeddings[pair_ids] @ image_embeddings[pair_ids].t()
-                    )
-                    sim_matrix_image2text = (
-                        image_embeddings[pair_ids] @ caption_embeddings[pair_ids].t()
-                    )
+                    sim_matrix_text = batch_caption_embeddings @ batch_caption_embeddings.t()
+                    sim_matrix_image = batch_image_embeddings @ batch_image_embeddings.t()
+                    sim_matrix_text2image = batch_caption_embeddings @ batch_image_embeddings.t()
+                    sim_matrix_image2text = batch_image_embeddings @ batch_caption_embeddings.t()
 
                     sim_matrix = _combine_sim_matrices(
                         sim_matrix_text,
