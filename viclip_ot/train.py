@@ -7,6 +7,7 @@ import sys
 import time
 from datetime import datetime
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.version
@@ -444,6 +445,8 @@ def train_model(args: argparse.Namespace) -> None:
     )
 
     def _run_test_only(data_loader: DataLoader) -> None:  # pyright: ignore[reportMissingTypeArgument]
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
         test_start_time = time.perf_counter()
         test_criterion = (
             eval_criterion if model_bundle.test_only_uses_eval_criterion else criterion
@@ -454,6 +457,8 @@ def train_model(args: argparse.Namespace) -> None:
             eval_data_loader=data_loader,
             device=device,
         )
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
         test_elapsed_time = time.perf_counter() - test_start_time
         logger.info(
             "** Test results **\n"
@@ -649,10 +654,14 @@ def train_model(args: argparse.Namespace) -> None:
     global_step = 0
     total_training_only_time = 0.0
     total_eval_time = 0.0
-    total_training_samples = 0
+    total_training_pairs = 0
     for epoch in range(args.num_epochs):
         model.train()
         criterion_kwargs = {}
+
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        epoch_training_start_time = time.perf_counter()
 
         train_data_iter = iter(train_data_loader)
         total_num_samples = len(train_data_loader)
@@ -672,9 +681,9 @@ def train_model(args: argparse.Namespace) -> None:
         )
 
         train_loss = AverageMeter(name="train_loss", fmt=":0.4f")
+        epoch_training_pairs = 0
 
         for update_step in train_progressbar:
-            step_start_time = time.perf_counter()
             num_batches = (
                 args.gradient_accum_steps
                 if update_step + 1 < num_updates_per_epoch
@@ -906,9 +915,7 @@ def train_model(args: argparse.Namespace) -> None:
             scaler.update()
             optimizer.zero_grad()
 
-            step_elapsed = time.perf_counter() - step_start_time
-            total_training_only_time += step_elapsed
-            total_training_samples += num_items_in_batch
+            epoch_training_pairs += num_items_in_batch
 
             # Clamp log(1 / temperature) after each optimizer update, as in CLIP.
             with torch.no_grad():
@@ -947,7 +954,6 @@ def train_model(args: argparse.Namespace) -> None:
                     main_lr_scheduler.step()
 
             if (update_step + 1) % args.log_file_interval == 0:
-                samples_per_sec = num_items_in_batch / step_elapsed if step_elapsed > 0 else 0.0
                 memory_suffix = ""
                 if device.type == "cuda":
                     memory_stats = utils.get_gpu_memory_stats(device)
@@ -966,9 +972,8 @@ def train_model(args: argparse.Namespace) -> None:
                     f"loss: {batch_loss:0.4f}"
                     f"{loss_components_str}\t"
                     f"grad_norm: {grad_norm_value:0.4f}\t"
-                    f"logit_scale: {model.logit_scale.exp().item():0.4f}\t"
-                    f"step: {step_elapsed * 1000:0.1f} ms\t"
-                    f"samples/s: {samples_per_sec:0.1f}{memory_suffix}"
+                    f"logit_scale: {model.logit_scale.exp().item():0.4f}"
+                    f"{memory_suffix}"
                 )
 
             train_loss.update(batch_loss, num_items_in_batch)
@@ -981,16 +986,32 @@ def train_model(args: argparse.Namespace) -> None:
             )
             global_step += 1
 
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        epoch_training_elapsed = time.perf_counter() - epoch_training_start_time
+        total_training_only_time += epoch_training_elapsed
+        total_training_pairs += epoch_training_pairs
+
+        epoch_pairs_per_sec = epoch_training_pairs / epoch_training_elapsed
+        logger.info(
+            f"Training epoch {epoch + 1} time: {utils.to_hms(epoch_training_elapsed)}\t"
+            f"image-text pairs/s: {epoch_pairs_per_sec:0.1f}"
+        )
+
         if wandb_run is not None:
             wandb_run.log(
                 {
                     "train/epoch_loss": train_loss.avg,
+                    "train/epoch_time_seconds": epoch_training_elapsed,
+                    "train/epoch_image_text_pairs_per_second": epoch_pairs_per_sec,
                     "epoch": epoch + 1,
                 },
                 step=global_step,
             )
 
         # validation
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
         eval_start_time = time.perf_counter()
         val_results = eval_model(
             model=model,
@@ -1007,6 +1028,8 @@ def train_model(args: argparse.Namespace) -> None:
             wandb_run=wandb_run,
             wandb_log_step=global_step,
         )
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
         total_eval_time += time.perf_counter() - eval_start_time
 
         # testing (excluded from timing)
@@ -1077,7 +1100,7 @@ def train_model(args: argparse.Namespace) -> None:
     if total_training_only_time > 0:
         logger.info(
             f"  Training throughput: "
-            f"{total_training_samples / total_training_only_time:0.1f} samples/s"
+            f"{total_training_pairs / total_training_only_time:0.1f} image-text pairs/s"
         )
     if device.type == "cuda":
         memory_stats = utils.get_gpu_memory_stats(device)
