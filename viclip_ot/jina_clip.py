@@ -23,6 +23,7 @@ class JinaCLIPLoRAConfig(BaseModel):
     alpha: Annotated[float, Field(gt=0)] = 32.0
     dropout: Annotated[float, Field(ge=0.0, lt=1.0)] = 0.05
     gradient_checkpointing: bool = True
+    image_micro_batch_size: Annotated[int, Field(gt=0)] = 1
 
 
 class JinaCLIPV2Config(BaseModel):
@@ -155,6 +156,7 @@ class JinaCLIPV2LoRA(nn.Module):
             self.logit_bias = nn.Parameter(torch.tensor(config.logit_bias, dtype=torch.float32))
 
         self._log_parameter_counts()
+        logger.info(f"Jina vision forward microbatch size: {config.lora.image_micro_batch_size}.")
 
     @property
     def logit_scale(self) -> nn.Parameter:
@@ -235,13 +237,22 @@ class JinaCLIPV2LoRA(nn.Module):
         return cast(Tensor, self.jina_model.get_text_features(input_ids=input_ids))
 
     def encode_image(self, images: Tensor, normalize: bool = False) -> Tensor:
-        if self.config.lora.gradient_checkpointing and self.training and torch.is_grad_enabled():
-            features = cast(
-                Tensor,
-                checkpoint(self._get_image_features, images, use_reentrant=False),
-            )
-        else:
-            features = self._get_image_features(images)
+        feature_chunks = []
+        for image_chunk in images.split(self.config.lora.image_micro_batch_size):
+            if (
+                self.config.lora.gradient_checkpointing
+                and self.training
+                and torch.is_grad_enabled()
+            ):
+                chunk_features = cast(
+                    Tensor,
+                    checkpoint(self._get_image_features, image_chunk, use_reentrant=False),
+                )
+            else:
+                chunk_features = self._get_image_features(image_chunk)
+            feature_chunks.append(chunk_features)
+
+        features = torch.cat(feature_chunks, dim=0)
         if normalize:
             features = Fun.normalize(features, p=2, dim=-1)
         return features

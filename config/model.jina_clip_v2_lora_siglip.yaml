@@ -17,3 +17,5 @@ lora:
   alpha: 32.0
   dropout: 0.0
   gradient_checkpointing: true
+  # Bound the 512x512 EVA activation peak while preserving every caption pair.
+  image_micro_batch_size: 1
