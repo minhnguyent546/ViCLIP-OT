@@ -267,8 +267,8 @@ def eval_model(
                     image_ids=image_ids,
                 )
 
-            all_image_features.append(image_features.cpu())
-            all_text_features.append(text_features.cpu())
+            all_image_features.append(image_features.cpu().float())
+            all_text_features.append(text_features.cpu().float())
             all_image_ids.append(image_ids)
 
             eval_loss.update(loss.item(), images.shape[0])
