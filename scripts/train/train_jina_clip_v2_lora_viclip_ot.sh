@@ -9,7 +9,7 @@ uv run --no-sync python -m viclip_ot.train \
   --dataset_dir ./data/UIT-OpenViIC \
   --train_batch_size 8 \
   --gradient_accum_steps 16 \
-  --eval_batch_size 1 \
+  --eval_batch_size 2 \
   --train_crop_size 512 \
   --eval_resize_size 512 \
   --eval_crop_size 512 \
