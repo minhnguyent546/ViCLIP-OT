@@ -146,10 +146,18 @@ class JinaCLIPV2LoRA(nn.Module):
             parameter.requires_grad = False
 
         self._register_lora_adapters()
-        # Jina stores log(1 / temperature). None preserves the learned checkpoint value.
-        if config.initial_temperature is not None:
-            self.jina_model.logit_scale.data.fill_(math.log(1 / config.initial_temperature))
-        self.jina_model.logit_scale.requires_grad = True
+        # Keep the scalar in float32. BF16 spacing near logit_scale=4 is 0.03125,
+        # much larger than the optimizer's per-step updates at a 1e-4 learning rate.
+        initial_logit_scale = (
+            self.jina_model.logit_scale.detach().float()
+            if config.initial_temperature is None
+            else torch.tensor(
+                math.log(1 / config.initial_temperature),
+                device=self.jina_model.logit_scale.device,
+                dtype=torch.float32,
+            )
+        )
+        self.jina_model.logit_scale = nn.Parameter(initial_logit_scale)
 
         self.logit_bias = None
         if config.logit_bias is not None:
