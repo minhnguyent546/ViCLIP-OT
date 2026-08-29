@@ -18,8 +18,8 @@ uv run --no-sync python -m viclip_ot.train \
   --num_workers 4 \
   --log_file_interval 3 \
   --mixed_precision bf16 \
-  --lr 1e-4 \
-  --backbone_lr 1e-4 \
+  --lr 2e-4 \
+  --backbone_lr 2e-4 \
   --weight_decay 1e-4 \
   --scheduler one_cycle_lr \
   --min_lr 1e-6 \
