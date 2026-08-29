@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# One-time setup: UV_TORCH_BACKEND=cu128 uv sync --group jina-training
+
 uv run --no-sync python -m viclip_ot.train \
   --optimizer adamw \
   --adam_eps 1e-10 \

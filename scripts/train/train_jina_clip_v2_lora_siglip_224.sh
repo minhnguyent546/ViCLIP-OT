@@ -5,14 +5,14 @@ uv run --no-sync python -m viclip_ot.train \
   --optimizer adamw \
   --adam_eps 1e-10 \
   --seed 42 \
-  --model_config ./config/model.jina_clip_v2_lora_clip.yaml \
+  --model_config ./config/model.jina_clip_v2_lora_siglip_224.yaml \
   --dataset_dir ./data/UIT-OpenViIC \
   --train_batch_size 8 \
   --gradient_accum_steps 16 \
   --eval_batch_size 2 \
-  --train_crop_size 512 \
-  --eval_resize_size 512 \
-  --eval_crop_size 512 \
+  --train_crop_size 224 \
+  --eval_resize_size 256 \
+  --eval_crop_size 224 \
   --checkpoints_dir ./checkpoints \
   --num_epochs 15 \
   --num_workers 4 \
@@ -31,5 +31,5 @@ uv run --no-sync python -m viclip_ot.train \
   --max_grad_norm 1.0 \
   --wandb_logging \
   --wandb_project viclip_ot \
-  --wandb_name jina_clip_v2_lora_r16_a32_clip \
-  --criterion clip_loss
+  --wandb_name jina_clip_v2_lora_r16_a32_siglip_224 \
+  --criterion sig_lip_loss
