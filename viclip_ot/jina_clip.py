@@ -345,7 +345,7 @@ class JinaCLIPV2LoRA(nn.Module):
         split_size_or_sections = self.config.lora.image_micro_batch_size
         if split_size_or_sections is None:
             split_size_or_sections = images.shape[0]
-        for image_chunk in images.split(self.config.lora.image_micro_batch_size):
+        for image_chunk in images.split(split_size_or_sections):
             if (
                 self.config.lora.gradient_checkpointing
                 and self.training
