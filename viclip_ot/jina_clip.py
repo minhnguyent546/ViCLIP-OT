@@ -21,7 +21,7 @@ class JinaCLIPLoRAConfig(BaseModel):
 
     rank: Annotated[int, Field(gt=0)] = 16
     alpha: Annotated[float, Field(gt=0)] = 32.0
-    dropout: Annotated[float, Field(ge=0.0, lt=1.0)] = 0.05
+    dropout: Annotated[float, Field(ge=0.0, le=0.0)] = 0.0
     gradient_checkpointing: bool = True
     image_micro_batch_size: Annotated[int, Field(gt=0)] = 1
 
@@ -86,6 +86,104 @@ class LoRAWeightParametrization(nn.Module):
         return base_weight + update.to(dtype=base_weight.dtype)
 
 
+def _resize_jina_vision_tower(jina_model: Any, target_image_size: int) -> None:
+    vision_model = jina_model.vision_model
+    vision_config = jina_model.config.vision_config
+    patch_size = int(vision_config.patch_size)
+    source_image_size = int(vision_config.image_size)
+    if target_image_size == source_image_size:
+        return
+    if target_image_size % patch_size != 0:
+        raise ValueError(
+            f"Resized Jina image size {target_image_size} must be divisible by "
+            f"patch size {patch_size}."
+        )
+
+    source_grid_size = source_image_size // patch_size
+    target_grid_size = target_image_size // patch_size
+    position_embeddings: Tensor | None = vision_model.pos_embed
+    if position_embeddings is not None:
+        expected_source_tokens = source_grid_size**2 + 1
+        if position_embeddings.shape[1] != expected_source_tokens:
+            raise RuntimeError(
+                f"Expected {expected_source_tokens} Jina vision position tokens for "
+                f"{source_image_size}x{source_image_size}, found {position_embeddings.shape[1]}."
+            )
+        class_position_embedding = position_embeddings[:, :1]
+        patch_position_embeddings = position_embeddings[:, 1:].reshape(
+            1,
+            source_grid_size,
+            source_grid_size,
+            position_embeddings.shape[-1],
+        )
+        patch_position_embeddings = patch_position_embeddings.permute(0, 3, 1, 2)
+        resized_patch_position_embeddings = Fun.interpolate(
+            patch_position_embeddings.float(),
+            size=(target_grid_size, target_grid_size),
+            mode="bicubic",
+            align_corners=False,
+        )
+        resized_patch_position_embeddings = resized_patch_position_embeddings.permute(
+            0, 2, 3, 1
+        ).reshape(1, target_grid_size**2, position_embeddings.shape[-1])
+        resized_position_embeddings = torch.cat(
+            (
+                class_position_embedding.float(),
+                resized_patch_position_embeddings,
+            ),
+            dim=1,
+        ).to(device=position_embeddings.device, dtype=position_embeddings.dtype)
+        vision_model.pos_embed = nn.Parameter(
+            resized_position_embeddings,
+            requires_grad=position_embeddings.requires_grad,
+        )
+
+    if vision_model.rel_pos_bias is not None:
+        raise NotImplementedError("Resizing Jina shared relative position bias is not supported.")
+    for block in vision_model.blocks:
+        if block.attn.relative_position_bias_table is not None:
+            raise NotImplementedError(
+                "Resizing Jina per-block relative position bias is not supported."
+            )
+
+    if vision_model.rope is not None:
+        source_rope = vision_model.rope
+        source_frequency_cosines: Tensor = source_rope.freqs_cos
+        num_heads = int(vision_config.width) // int(vision_config.head_width)
+        rotary_dimension = int(vision_config.width) // num_heads // 2
+        resized_rope = type(source_rope)(
+            dim=rotary_dimension,
+            pt_seq_len=int(vision_config.pt_hw_seq_len),
+            ft_seq_len=target_grid_size,
+            patch_dropout=float(vision_config.patch_dropout),
+        ).to(
+            device=source_frequency_cosines.device,
+            dtype=source_frequency_cosines.dtype,
+        )
+        if resized_rope.freqs_cos.shape[0] != target_grid_size**2:
+            raise RuntimeError(
+                f"Expected {target_grid_size**2} resized Jina RoPE positions, "
+                f"found {resized_rope.freqs_cos.shape[0]}."
+            )
+        vision_model.rope = resized_rope
+        for block in vision_model.blocks:
+            block.attn.rope = resized_rope
+
+    target_grid_shape = (target_grid_size, target_grid_size)
+    vision_model.image_size = target_image_size
+    vision_model.patch_embed.img_size = (target_image_size, target_image_size)
+    vision_model.patch_embed.patch_shape = target_grid_shape
+    vision_model.patch_embed.num_patches = target_grid_size**2
+    vision_config.image_size = target_image_size
+
+    logger.info(
+        f"Resized Jina EVA vision tower from {source_image_size}x{source_image_size} "
+        f"({source_grid_size}x{source_grid_size} patches) to "
+        f"{target_image_size}x{target_image_size} "
+        f"({target_grid_size}x{target_grid_size} patches)."
+    )
+
+
 class JinaCLIPV2LoRA(nn.Module):
     def __init__(self, config: JinaCLIPV2Config) -> None:
         super().__init__()
@@ -104,7 +202,7 @@ class JinaCLIPV2LoRA(nn.Module):
             )
         if config.use_vision_xformers and importlib.util.find_spec("xformers") is None:
             raise RuntimeError(
-                "Jina CLIP v2 LoRA training at 512x512 requires xFormers. "
+                "Jina CLIP v2 LoRA training requires xFormers. "
                 "Install the project optional dependency with "
                 "`UV_TORCH_BACKEND=cu128 uv sync --group jina-training`."
             )
@@ -135,12 +233,7 @@ class JinaCLIPV2LoRA(nn.Module):
             trust_remote_code=True,
         )
 
-        pretrained_image_size = int(self.jina_model.config.vision_config.image_size)
-        if config.image_size != pretrained_image_size:
-            raise ValueError(
-                f"Jina CLIP v2 requires {pretrained_image_size}x{pretrained_image_size} inputs, "
-                f"but the model config requested {config.image_size}x{config.image_size}."
-            )
+        _resize_jina_vision_tower(self.jina_model, config.image_size)
 
         for parameter in self.jina_model.parameters():
             parameter.requires_grad = False
@@ -277,6 +370,55 @@ class JinaCLIPV2LoRA(nn.Module):
         if normalize:
             features = Fun.normalize(features, p=2, dim=-1)
         return features
+
+    def get_checkpoint_metadata(self) -> dict[str, Any]:
+        vision_config = self.jina_model.config.vision_config
+        return {
+            "format_version": 1,
+            "model_type": self.config.model_type,
+            "model_name": self.config.model_name,
+            "revision": self.config.revision,
+            "code_revision": self.config.code_revision,
+            "image_size": self.config.image_size,
+            "patch_size": int(vision_config.patch_size),
+            "position_interpolation": "bicubic_align_corners_false_v1",
+            "lora_rank": self.config.lora.rank,
+            "lora_alpha": self.config.lora.alpha,
+            "lora_dropout": self.config.lora.dropout,
+            "text_target_suffixes": ["mixer.Wqkv", "mixer.out_proj"],
+            "vision_target_suffixes": [
+                "attn.q_proj",
+                "attn.k_proj",
+                "attn.v_proj",
+                "attn.proj",
+            ],
+        }
+
+    def validate_checkpoint_metadata(self, metadata: dict[str, Any] | None) -> None:
+        if metadata is None:
+            if self.config.image_size == 512:
+                logger.warning(
+                    "Loading a legacy Jina adapter checkpoint without model metadata. "
+                    "Assuming the native 512x512 vision configuration."
+                )
+                return
+            raise RuntimeError(
+                "The Jina adapter checkpoint has no model metadata, so it cannot be safely "
+                f"loaded into the resized {self.config.image_size}x{self.config.image_size} "
+                "vision tower. Use a checkpoint saved by the configurable-resolution code."
+            )
+
+        expected_metadata = self.get_checkpoint_metadata()
+        if metadata != expected_metadata:
+            mismatches = {
+                key: {"expected": expected_metadata.get(key), "provided": metadata.get(key)}
+                for key in sorted(set(expected_metadata) | set(metadata))
+                if expected_metadata.get(key) != metadata.get(key)
+            }
+            raise RuntimeError(
+                "Jina adapter checkpoint metadata does not match the current model config: "
+                f"{mismatches}."
+            )
 
     def get_checkpoint_state_dict(self) -> dict[str, Tensor]:
         trainable_parameter_names = {

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from typing import Any
 
 import numpy as np
 import torch
@@ -234,8 +235,14 @@ def train_model(args: argparse.Namespace) -> None:
     if args.linear_probing:
         raise NotImplementedError("Loading from checkpoint is not implemented yet.")
 
-    def load_model_checkpoint_state(state_dict: dict[str, Tensor]) -> None:
+    def load_model_checkpoint_state(
+        state_dict: dict[str, Tensor],
+        checkpoint_metadata: dict[str, Any] | None = None,
+    ) -> None:
         if model_bundle.save_trainable_state_only:
+            model.validate_checkpoint_metadata(  # pyright: ignore[reportAttributeAccessIssue]
+                checkpoint_metadata
+            )
             model.load_checkpoint_state_dict(  # pyright: ignore[reportAttributeAccessIssue]
                 state_dict
             )
@@ -245,7 +252,10 @@ def train_model(args: argparse.Namespace) -> None:
     if args.from_checkpoint is not None:
         logger.info(f"Loading model from checkpoint: {args.from_checkpoint}")
         checkpoint = torch.load(args.from_checkpoint, map_location=device, weights_only=False)
-        load_model_checkpoint_state(checkpoint["model_state_dict"])
+        load_model_checkpoint_state(
+            checkpoint["model_state_dict"],
+            checkpoint.get("model_metadata"),
+        )
 
     if not model_bundle.supports_tower_locking and (args.lock_image or args.lock_text):
         raise ValueError(
@@ -1066,6 +1076,8 @@ def train_model(args: argparse.Namespace) -> None:
             "epoch": epoch,
             "global_step": global_step,
         }
+        if model_bundle.save_trainable_state_only:
+            state_dict_to_save["model_metadata"] = model.get_checkpoint_metadata()  # pyright: ignore[reportAttributeAccessIssue]
         if not args.save_best_k_only:
             torch.save(state_dict_to_save, checkpoint_path)
         save_top_k_checkpoints(
@@ -1122,7 +1134,10 @@ def train_model(args: argparse.Namespace) -> None:
         logger.info("Loading best checkpoint for final evaluation on test set...")
 
         checkpoint = torch.load(best_checkpoint_path, map_location=device, weights_only=False)
-        load_model_checkpoint_state(checkpoint["model_state_dict"])
+        load_model_checkpoint_state(
+            checkpoint["model_state_dict"],
+            checkpoint.get("model_metadata"),
+        )
 
         _run_test_only(test_data_loader)
 

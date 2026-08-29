@@ -1,0 +1,21 @@
+model_type: jina_clip_v2
+model_name: jinaai/jina-clip-v2
+revision: e10d47f5691d0454a0fb5d13f46f2199b74cb436
+code_revision: 39e6a55ae971b59bea6e44675d237c99762e7ee2
+max_length: 128
+# Resize the released 512px EVA tower to a 16x16 patch grid after loading.
+image_size: 224
+dtype: bfloat16
+# null preserves Jina's learned logit_scale, where logit_scale = log(1 / temperature).
+initial_temperature: null
+# Jina has no pretrained bias; -9 matches the ViCLIP-OT SigLIP protocol.
+logit_bias: -9.0
+use_text_flash_attention: true
+use_vision_xformers: true
+
+lora:
+  rank: 16
+  alpha: 32.0
+  dropout: 0.0
+  gradient_checkpointing: true
+  image_micro_batch_size: 4
