@@ -18,4 +18,4 @@ lora:
   alpha: 32.0
   dropout: 0.0
   gradient_checkpointing: true
-  image_micro_batch_size: 4
+  image_micro_batch_size: 16
