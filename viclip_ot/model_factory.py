@@ -4,6 +4,7 @@ from typing import Any, Literal
 import viclip_ot.constants as C
 from viclip_ot.jina_clip import JinaCLIPV2Config, JinaCLIPV2LoRA
 from viclip_ot.model import ViCLIPOT, ViCLIPOTConfig
+from viclip_ot.msiglip import MSigLIPConfig, MSigLIPFullFineTune
 from viclip_ot.utils import load_yaml_file
 
 CaptionFormat = Literal["gemma", "e5", "qwen3", "bge", "sbert", "plain"]
@@ -12,7 +13,7 @@ CaptionFormat = Literal["gemma", "e5", "qwen3", "bge", "sbert", "plain"]
 @dataclass(frozen=True)
 class TrainingModelBundle:
     model: Any
-    config: ViCLIPOTConfig | JinaCLIPV2Config
+    config: ViCLIPOTConfig | JinaCLIPV2Config | MSigLIPConfig
     tokenizer: Any
     max_length: int
     text_padding: Literal["longest", "max_length"]
@@ -99,6 +100,34 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             ),
             supports_tower_locking=False,
             save_trainable_state_only=True,
+            test_only_uses_eval_criterion=True,
+            logit_scale_min=config.logit_scale_min,
+            logit_scale_max=config.logit_scale_max,
+        )
+
+    if model_type == "msiglip":
+        config = MSigLIPConfig.model_validate(raw_config)
+        model = MSigLIPFullFineTune(config=config)
+        return TrainingModelBundle(
+            model=model,
+            config=config,
+            tokenizer=model.tokenizer,
+            max_length=config.max_length,
+            text_padding="max_length",
+            caption_format="plain",
+            image_mean=C.IMAGENET_INCEPTION_MEAN,
+            image_std=C.IMAGENET_INCEPTION_STD,
+            required_image_size=config.image_size,
+            backbone_prefixes=(
+                "siglip_model.text_model.",
+                "siglip_model.vision_model.",
+            ),
+            adapter_prefixes=(
+                "siglip_model.logit_scale",
+                "siglip_model.logit_bias",
+            ),
+            supports_tower_locking=False,
+            save_trainable_state_only=False,
             test_only_uses_eval_criterion=True,
             logit_scale_min=config.logit_scale_min,
             logit_scale_max=config.logit_scale_max,

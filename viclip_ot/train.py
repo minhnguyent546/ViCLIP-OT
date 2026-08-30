@@ -258,10 +258,7 @@ def train_model(args: argparse.Namespace) -> None:
         )
 
     if not model_bundle.supports_tower_locking and (args.lock_image or args.lock_text):
-        raise ValueError(
-            "The selected model uses frozen backbones with LoRA adapters and does not support "
-            "--lock_image or --lock_text."
-        )
+        raise ValueError("The selected model does not support --lock_image or --lock_text.")
     if args.lock_image:
         model.lock_image_tower(  # pyright: ignore[reportAttributeAccessIssue]
             last_unfreeze_groups=args.lock_image_last_unfreeze_groups,

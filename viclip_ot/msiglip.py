@@ -1,0 +1,90 @@
+from typing import Annotated, Any, Literal, cast
+
+import torch.nn as nn
+import torch.nn.functional as Fun
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from torch import Tensor
+from transformers import AutoTokenizer, SiglipModel
+
+from viclip_ot.utils.logger import logger
+
+
+class MSigLIPConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_type: Literal["msiglip"]
+    model_name: Literal["google/siglip-base-patch16-256-multilingual"] = (
+        "google/siglip-base-patch16-256-multilingual"
+    )
+    revision: str = "8952a4eafcde3cb7ab46b1dd629b33f8784ca9c6"
+    max_length: Literal[64] = 64
+    image_size: Literal[256] = 256
+    gradient_checkpointing: bool = True
+    attention_implementation: Literal["eager", "sdpa"] = "sdpa"
+    logit_scale_min: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 0.01
+    logit_scale_max: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 200.0
+
+    @model_validator(mode="after")
+    def validate_logit_scale_bounds(self) -> "MSigLIPConfig":
+        if self.logit_scale_min >= self.logit_scale_max:
+            raise ValueError("logit_scale_min must be less than logit_scale_max")
+        return self
+
+
+class MSigLIPFullFineTune(nn.Module):
+    def __init__(self, config: MSigLIPConfig) -> None:
+        super().__init__()
+        self.config = config
+        self.siglip_model = SiglipModel.from_pretrained(
+            config.model_name,
+            revision=config.revision,
+            attn_implementation=config.attention_implementation,
+        )
+        self.tokenizer: Any = AutoTokenizer.from_pretrained(
+            config.model_name,
+            revision=config.revision,
+        )
+
+        if config.gradient_checkpointing:
+            self.siglip_model.gradient_checkpointing_enable()
+
+        total_parameters = sum(parameter.numel() for parameter in self.parameters())
+        trainable_parameters = sum(
+            parameter.numel() for parameter in self.parameters() if parameter.requires_grad
+        )
+        logger.info(
+            f"mSigLIP parameters: total={total_parameters:,}, trainable={trainable_parameters:,}."
+        )
+
+    @property
+    def logit_scale(self) -> nn.Parameter:
+        return self.siglip_model.logit_scale
+
+    @property
+    def logit_bias(self) -> nn.Parameter:
+        return self.siglip_model.logit_bias
+
+    def encode_image(self, images: Tensor, normalize: bool = False) -> Tensor:
+        features = cast(
+            Tensor,
+            self.siglip_model.get_image_features(
+                pixel_values=images  # pyright: ignore[reportArgumentType]
+            ),
+        )
+        if normalize:
+            features = Fun.normalize(features, p=2, dim=-1)
+        return features
+
+    def encode_text(self, text_inputs: Any, normalize: bool = False) -> Tensor:
+        features = cast(Tensor, self.siglip_model.get_text_features(**text_inputs))
+        if normalize:
+            features = Fun.normalize(features, p=2, dim=-1)
+        return features
+
+    def forward(self, images: Tensor, text_inputs: Any) -> dict[str, Tensor]:
+        return {
+            "image_features": self.encode_image(images, normalize=True),
+            "text_features": self.encode_text(text_inputs, normalize=True),
+            "logit_scale": self.logit_scale.exp(),
+            "logit_bias": self.logit_bias,
+        }
