@@ -32,7 +32,7 @@ uv run --no-sync python -m viclip_ot.train \
     --max_grad_norm 1.0 \
     --wandb_logging \
     --wandb_project viclip_ot \
-    --wandb_name msiglip_sigrot \
+    --wandb_name msiglip_visiglip_ot \
     --precomputed_image_embeddings_path ./data/UIT-OpenViIC-embeddings/train_image_embeddings_qwen3_vl_embedding_2b.pt \
     --precomputed_caption_embeddings_path ./data/UIT-OpenViIC-embeddings/train_caption_embeddings_qwen3_vl_embedding_2b.pt \
     --sim_graph_regularized_ot \
