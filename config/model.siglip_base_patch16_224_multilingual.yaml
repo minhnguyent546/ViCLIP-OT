@@ -1,4 +1,4 @@
-model_type: msiglip
+model_type: siglip
 model_name: google/siglip-base-patch16-256-multilingual
 revision: 8952a4eafcde3cb7ab46b1dd629b33f8784ca9c6
 max_length: 64
