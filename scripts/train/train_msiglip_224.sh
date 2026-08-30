@@ -15,12 +15,12 @@ uv run --no-sync python -m viclip_ot.train \
     --eval_resize_size 256 \
     --eval_crop_size 224 \
     --checkpoints_dir ./checkpoints \
-    --num_epochs 30 \
+    --num_epochs 15 \
     --num_workers 8 \
     --log_file_interval 3 \
     --mixed_precision bf16 \
-    --lr 2e-4 \
-    --backbone_lr 5e-5 \
+    --lr 5e-5 \
+    --backbone_lr 1e-5 \
     --weight_decay 1e-4 \
     --scheduler one_cycle_lr \
     --min_lr 1e-6 \
