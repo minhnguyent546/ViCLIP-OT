@@ -4,7 +4,7 @@ from typing import Any, Literal
 import viclip_ot.constants as C
 from viclip_ot.jina_clip import JinaCLIPV2Config, JinaCLIPV2LoRA
 from viclip_ot.model import ViCLIPOT, ViCLIPOTConfig
-from viclip_ot.msiglip import MSigLIPConfig, MSigLIPFullFineTune
+from viclip_ot.msiglip import SigLIP, SigLIPConfig
 from viclip_ot.utils import load_yaml_file
 
 CaptionFormat = Literal["gemma", "e5", "qwen3", "bge", "sbert", "plain"]
@@ -13,7 +13,7 @@ CaptionFormat = Literal["gemma", "e5", "qwen3", "bge", "sbert", "plain"]
 @dataclass(frozen=True)
 class TrainingModelBundle:
     model: Any
-    config: ViCLIPOTConfig | JinaCLIPV2Config | MSigLIPConfig
+    config: ViCLIPOTConfig | JinaCLIPV2Config | SigLIPConfig
     tokenizer: Any
     max_length: int
     text_padding: Literal["longest", "max_length"]
@@ -110,10 +110,9 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             logit_scale_min=config.logit_scale_min,
             logit_scale_max=config.logit_scale_max,
         )
-
-    if model_type == "msiglip":
-        config = MSigLIPConfig.model_validate(raw_config)
-        model = MSigLIPFullFineTune(config=config)
+    if model_type == "siglip":
+        config = SigLIPConfig.model_validate(raw_config)
+        model = SigLIP(config=config)
         return TrainingModelBundle(
             model=model,
             config=config,

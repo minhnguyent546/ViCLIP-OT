@@ -9,10 +9,10 @@ from transformers import AutoTokenizer, SiglipModel
 from viclip_ot.utils.logger import logger
 
 
-class MSigLIPConfig(BaseModel):
+class SigLIPConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    model_type: Literal["msiglip"]
+    model_type: Literal["siglip"]
     model_name: Literal["google/siglip-base-patch16-256-multilingual"] = (
         "google/siglip-base-patch16-256-multilingual"
     )
@@ -25,14 +25,14 @@ class MSigLIPConfig(BaseModel):
     logit_scale_max: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 200.0
 
     @model_validator(mode="after")
-    def validate_logit_scale_bounds(self) -> "MSigLIPConfig":
+    def validate_logit_scale_bounds(self) -> "SigLIPConfig":
         if self.logit_scale_min >= self.logit_scale_max:
             raise ValueError("logit_scale_min must be less than logit_scale_max")
         return self
 
 
-class MSigLIPFullFineTune(nn.Module):
-    def __init__(self, config: MSigLIPConfig) -> None:
+class SigLIP(nn.Module):
+    def __init__(self, config: SigLIPConfig) -> None:
         super().__init__()
         self.config = config
         self.siglip_model = SiglipModel.from_pretrained(
