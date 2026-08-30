@@ -932,7 +932,10 @@ def train_model(args: argparse.Namespace) -> None:
 
             # Clamp log(1 / temperature) after each optimizer update, as in CLIP.
             with torch.no_grad():
-                model.logit_scale.clamp_(min=np.log(1 / 100), max=np.log(100))
+                model.logit_scale.clamp_(
+                    min=np.log(model_bundle.logit_scale_min),
+                    max=np.log(model_bundle.logit_scale_max),
+                )
 
             # Skip a lone "loss" component (e.g. plain SigLIP) — it duplicates the total.
             detailed_loss_components = {

@@ -25,6 +25,8 @@ class TrainingModelBundle:
     supports_tower_locking: bool
     save_trainable_state_only: bool
     test_only_uses_eval_criterion: bool
+    logit_scale_min: float
+    logit_scale_max: float
 
 
 def _get_viclip_caption_format(model_name: str) -> CaptionFormat:
@@ -71,6 +73,8 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             supports_tower_locking=True,
             save_trainable_state_only=False,
             test_only_uses_eval_criterion=False,
+            logit_scale_min=config.logit_scale_min,
+            logit_scale_max=config.logit_scale_max,
         )
 
     if model_type == "jina_clip_v2":
@@ -96,6 +100,8 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             supports_tower_locking=False,
             save_trainable_state_only=True,
             test_only_uses_eval_criterion=True,
+            logit_scale_min=config.logit_scale_min,
+            logit_scale_max=config.logit_scale_max,
         )
 
     raise ValueError(f"Unsupported model_type: {model_type}")

@@ -1,6 +1,6 @@
 # pyright: reportAssignmentType=false
 import json
-from typing import Any, Literal, OrderedDict
+from typing import Annotated, Any, Literal, OrderedDict
 
 import numpy as np
 import timm
@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as Fun
 from huggingface_hub import hf_hub_download
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from safetensors.torch import load_file as load_safetensors
 from timm.layers.attention_pool2d import AttentionPool2d as AbsAttentionPool2d
 from timm.layers.attention_pool2d import RotAttentionPool2d
@@ -59,6 +59,14 @@ class ViCLIPOTConfig(BaseModel):
     # - initial_temperature = 0.1 and logit_bias = -10 for SigLIP loss
     initial_temperature: float = 0.07
     logit_bias: float | None = None
+    logit_scale_min: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 0.01
+    logit_scale_max: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 100.0
+
+    @model_validator(mode="after")
+    def validate_logit_scale_bounds(self) -> "ViCLIPOTConfig":
+        if self.logit_scale_min >= self.logit_scale_max:
+            raise ValueError("logit_scale_min must be less than logit_scale_max")
+        return self
 
 
 class ImageEncoder(nn.Module):

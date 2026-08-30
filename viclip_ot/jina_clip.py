@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal, cast
 import torch
 import torch.nn as nn
 import torch.nn.functional as Fun
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from torch import Tensor
 from torch.nn.utils import parametrize
 from torch.utils.checkpoint import checkpoint
@@ -40,7 +40,15 @@ class JinaCLIPV2Config(BaseModel):
     logit_bias: float | None = -9.0
     use_text_flash_attention: bool = True
     use_vision_xformers: bool = True
+    logit_scale_min: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 0.01
+    logit_scale_max: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 100.0
     lora: JinaCLIPLoRAConfig = JinaCLIPLoRAConfig()
+
+    @model_validator(mode="after")
+    def validate_logit_scale_bounds(self) -> "JinaCLIPV2Config":
+        if self.logit_scale_min >= self.logit_scale_max:
+            raise ValueError("logit_scale_min must be less than logit_scale_max")
+        return self
 
 
 class LoRAWeightParametrization(nn.Module):
