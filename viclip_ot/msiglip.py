@@ -18,7 +18,7 @@ class MSigLIPConfig(BaseModel):
     )
     revision: str = "8952a4eafcde3cb7ab46b1dd629b33f8784ca9c6"
     max_length: Literal[64] = 64
-    image_size: Literal[256] = 256
+    image_size: Literal[224, 256] = 256
     gradient_checkpointing: bool = True
     attention_implementation: Literal["eager", "sdpa"] = "sdpa"
     logit_scale_min: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 0.01
@@ -44,6 +44,21 @@ class MSigLIPFullFineTune(nn.Module):
             config.model_name,
             revision=config.revision,
         )
+
+        native_image_size = int(self.siglip_model.config.vision_config.image_size)
+        patch_size = int(self.siglip_model.config.vision_config.patch_size)
+        if config.image_size % patch_size != 0:
+            raise ValueError(
+                f"mSigLIP image size {config.image_size} must be divisible by patch size "
+                f"{patch_size}."
+            )
+        self.interpolate_pos_encoding = config.image_size != native_image_size
+        if self.interpolate_pos_encoding:
+            logger.info(
+                f"mSigLIP will interpolate vision position embeddings from "
+                f"{native_image_size // patch_size}x{native_image_size // patch_size} to "
+                f"{config.image_size // patch_size}x{config.image_size // patch_size}."
+            )
 
         if config.gradient_checkpointing:
             self.siglip_model.gradient_checkpointing_enable()
@@ -113,7 +128,8 @@ class MSigLIPFullFineTune(nn.Module):
         features = cast(
             Tensor,
             self.siglip_model.get_image_features(
-                pixel_values=images  # pyright: ignore[reportArgumentType]
+                pixel_values=images,  # pyright: ignore[reportArgumentType]
+                interpolate_pos_encoding=self.interpolate_pos_encoding,
             ),
         )
         if normalize:
