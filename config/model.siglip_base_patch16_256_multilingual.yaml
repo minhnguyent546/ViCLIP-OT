@@ -3,7 +3,7 @@ model_name: google/siglip-base-patch16-256-multilingual
 revision: 8952a4eafcde3cb7ab46b1dd629b33f8784ca9c6
 max_length: 64
 image_size: 256
-gradient_checkpointing: true
+gradient_checkpointing: false
 attention_implementation: sdpa
 logit_scale_min: 0.01
 logit_scale_max: 200.0
