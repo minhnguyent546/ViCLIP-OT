@@ -4,7 +4,7 @@ from typing import Any, Literal
 import viclip_ot.constants as C
 from viclip_ot.jina_clip import JinaCLIPV2Config, JinaCLIPV2LoRA
 from viclip_ot.model import ViCLIPOT, ViCLIPOTConfig
-from viclip_ot.msiglip import SigLIP, SigLIPConfig
+from viclip_ot.siglip import SigLIP, SigLIPConfig
 from viclip_ot.utils import load_yaml_file
 
 CaptionFormat = Literal["gemma", "e5", "qwen3", "bge", "sbert", "plain"]
