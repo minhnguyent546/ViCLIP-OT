@@ -20,6 +20,7 @@ class TrainingModelBundle:
     caption_format: CaptionFormat
     image_mean: tuple[float, float, float]
     image_std: tuple[float, float, float]
+    eval_resize_mode: Literal["resize_then_crop", "direct_square"]
     required_image_size: int | None
     backbone_prefixes: tuple[str, ...]
     adapter_prefixes: tuple[str, ...]
@@ -62,6 +63,7 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             caption_format=_get_viclip_caption_format(config.text_config.model_name),
             image_mean=C.IMAGENET_DEFAULT_MEAN,
             image_std=C.IMAGENET_DEFAULT_STD,
+            eval_resize_mode="resize_then_crop",
             required_image_size=None,
             backbone_prefixes=("text_encoder.encoder.", "image_encoder.trunk."),
             adapter_prefixes=(
@@ -90,6 +92,7 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             caption_format="plain",
             image_mean=C.OPENAI_CLIP_MEAN,
             image_std=C.OPENAI_CLIP_STD,
+            eval_resize_mode="resize_then_crop",
             required_image_size=config.image_size,
             backbone_prefixes=(),
             adapter_prefixes=(
@@ -117,6 +120,7 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             caption_format="plain",
             image_mean=C.IMAGENET_INCEPTION_MEAN,
             image_std=C.IMAGENET_INCEPTION_STD,
+            eval_resize_mode="direct_square",
             required_image_size=config.image_size,
             backbone_prefixes=(
                 "siglip_model.text_model.",

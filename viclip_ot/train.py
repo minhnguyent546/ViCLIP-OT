@@ -286,7 +286,18 @@ def train_model(args: argparse.Namespace) -> None:
                 f"The selected model requires --eval_crop_size "
                 f"{model_bundle.required_image_size}, found {args.eval_crop_size}."
             )
-        if args.eval_resize_size < model_bundle.required_image_size:
+        if (
+            model_bundle.eval_resize_mode == "direct_square"
+            and args.eval_resize_size != model_bundle.required_image_size
+        ):
+            raise ValueError(
+                f"The selected model requires --eval_resize_size "
+                f"{model_bundle.required_image_size}, found {args.eval_resize_size}."
+            )
+        if (
+            model_bundle.eval_resize_mode == "resize_then_crop"
+            and args.eval_resize_size < model_bundle.required_image_size
+        ):
             raise ValueError(
                 f"--eval_resize_size must be at least {model_bundle.required_image_size} "
                 "for the selected model."
@@ -310,10 +321,25 @@ def train_model(args: argparse.Namespace) -> None:
             ),
         ]
     )
-    eval_transforms = v2.Compose(
-        [
+    if model_bundle.eval_resize_mode == "direct_square":
+        eval_resize = v2.Resize(
+            size=(args.eval_resize_size, args.eval_resize_size),
+            interpolation=v2.InterpolationMode.BICUBIC,
+        )
+        eval_geometry_transforms = [eval_resize]
+    elif model_bundle.eval_resize_mode == "resize_then_crop":
+        eval_geometry_transforms = [
             v2.Resize(size=args.eval_resize_size, interpolation=v2.InterpolationMode.BICUBIC),
             v2.CenterCrop(size=args.eval_crop_size),
+        ]
+    else:
+        raise ValueError(
+            f"Unsupported eval_resize_mode: {model_bundle.eval_resize_mode}. "
+            "Supported modes are: 'direct_square', 'resize_then_crop'."
+        )
+    eval_transforms = v2.Compose(
+        [
+            *eval_geometry_transforms,
             v2.ToTensor(),
             v2.Normalize(
                 mean=model_bundle.image_mean,
