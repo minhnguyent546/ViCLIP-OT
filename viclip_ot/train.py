@@ -230,7 +230,13 @@ def train_model(args: argparse.Namespace) -> None:
         )
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
-    eval_criterion = losses.ClipLoss()
+
+    if args.eval_criterion == "clip_loss":
+        eval_criterion = losses.ClipLoss()
+    elif args.eval_criterion == "sig_lip_loss":
+        eval_criterion = losses.SigLipLoss()
+    else:
+        raise ValueError(f"Unsupported evaluation criterion: {args.criterion}")
 
     if args.linear_probing:
         raise NotImplementedError("Loading from checkpoint is not implemented yet.")

@@ -13,4 +13,4 @@ uv run --no-sync python -m viclip_ot.train \
     --eval_crop_size 256 \
     --eval_batch_size 32 \
     --num_workers 4 \
-    --criterion clip_loss
+    --eval_criterion sig_lip_loss

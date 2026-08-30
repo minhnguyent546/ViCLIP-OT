@@ -143,6 +143,16 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default="clip_loss",
     )
     group.add_argument(
+        "--eval_criterion",
+        type=str,
+        help="Which loss criterion to use for evaluation",
+        choices=[
+            "clip_loss",
+            "sig_lip_loss",
+        ],
+        default="clip_loss",
+    )
+    group.add_argument(
         "--use_transport_plan_as_logits",
         action="store_true",
         help="Whether to use the transport plan as logits for computing cross-entropy loss in batch-level entropic OT loss, otherwise the transport plan is used as soft targets. Note that these two cases will only happen when `--sim_graph_regularized_ot` is not set.",
