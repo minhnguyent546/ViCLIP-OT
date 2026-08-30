@@ -64,6 +64,51 @@ class MSigLIPFullFineTune(nn.Module):
     def logit_bias(self) -> nn.Parameter:
         return self.siglip_model.logit_bias
 
+    def get_checkpoint_metadata(self) -> dict[str, Any]:
+        vision_config = self.siglip_model.config.vision_config
+        return {
+            "format_version": 1,
+            "model_type": self.config.model_type,
+            "model_name": self.config.model_name,
+            "revision": self.config.revision,
+            "image_size": self.config.image_size,
+            "native_image_size": int(vision_config.image_size),
+            "patch_size": int(vision_config.patch_size),
+            "position_interpolation": (
+                "bicubic_align_corners_false_dynamic_v1"
+                if self.interpolate_pos_encoding
+                else "none"
+            ),
+            "max_length": self.config.max_length,
+            "text_padding": "max_length",
+        }
+
+    def validate_checkpoint_metadata(self, metadata: dict[str, Any] | None) -> None:
+        if metadata is None:
+            if self.config.image_size == int(self.siglip_model.config.vision_config.image_size):
+                logger.warning(
+                    "Loading a legacy mSigLIP checkpoint without model metadata. "
+                    "Assuming the native image resolution."
+                )
+                return
+            raise RuntimeError(
+                "The mSigLIP checkpoint has no model metadata, so it cannot be safely loaded "
+                f"under the interpolated {self.config.image_size}x{self.config.image_size} "
+                "resolution protocol."
+            )
+
+        expected_metadata = self.get_checkpoint_metadata()
+        if metadata != expected_metadata:
+            mismatches = {
+                key: {"expected": expected_metadata.get(key), "provided": metadata.get(key)}
+                for key in sorted(set(expected_metadata) | set(metadata))
+                if expected_metadata.get(key) != metadata.get(key)
+            }
+            raise RuntimeError(
+                "mSigLIP checkpoint metadata does not match the current model config: "
+                f"{mismatches}."
+            )
+
     def encode_image(self, images: Tensor, normalize: bool = False) -> Tensor:
         features = cast(
             Tensor,

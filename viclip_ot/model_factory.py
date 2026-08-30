@@ -26,6 +26,7 @@ class TrainingModelBundle:
     adapter_prefixes: tuple[str, ...]
     supports_tower_locking: bool
     save_trainable_state_only: bool
+    uses_checkpoint_metadata: bool
     test_only_uses_eval_criterion: bool
     logit_scale_min: float
     logit_scale_max: float
@@ -75,6 +76,7 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             ),
             supports_tower_locking=True,
             save_trainable_state_only=False,
+            uses_checkpoint_metadata=False,
             test_only_uses_eval_criterion=False,
             logit_scale_min=config.logit_scale_min,
             logit_scale_max=config.logit_scale_max,
@@ -103,6 +105,7 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             ),
             supports_tower_locking=False,
             save_trainable_state_only=True,
+            uses_checkpoint_metadata=True,
             test_only_uses_eval_criterion=True,
             logit_scale_min=config.logit_scale_min,
             logit_scale_max=config.logit_scale_max,
@@ -120,7 +123,7 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             caption_format="plain",
             image_mean=C.IMAGENET_INCEPTION_MEAN,
             image_std=C.IMAGENET_INCEPTION_STD,
-            eval_resize_mode="direct_square",
+            eval_resize_mode=("direct_square" if config.image_size == 256 else "resize_then_crop"),
             required_image_size=config.image_size,
             backbone_prefixes=(
                 "siglip_model.text_model.",
@@ -132,6 +135,7 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             ),
             supports_tower_locking=False,
             save_trainable_state_only=False,
+            uses_checkpoint_metadata=True,
             test_only_uses_eval_criterion=True,
             logit_scale_min=config.logit_scale_min,
             logit_scale_max=config.logit_scale_max,

@@ -245,10 +245,11 @@ def train_model(args: argparse.Namespace) -> None:
         state_dict: dict[str, Tensor],
         checkpoint_metadata: dict[str, Any] | None = None,
     ) -> None:
-        if model_bundle.save_trainable_state_only:
+        if model_bundle.uses_checkpoint_metadata:
             model.validate_checkpoint_metadata(  # pyright: ignore[reportAttributeAccessIssue]
                 checkpoint_metadata
             )
+        if model_bundle.save_trainable_state_only:
             model.load_checkpoint_state_dict(  # pyright: ignore[reportAttributeAccessIssue]
                 state_dict
             )
@@ -1111,7 +1112,7 @@ def train_model(args: argparse.Namespace) -> None:
             "epoch": epoch,
             "global_step": global_step,
         }
-        if model_bundle.save_trainable_state_only:
+        if model_bundle.uses_checkpoint_metadata:
             state_dict_to_save["model_metadata"] = model.get_checkpoint_metadata()  # pyright: ignore[reportAttributeAccessIssue]
         if not args.save_best_k_only:
             torch.save(state_dict_to_save, checkpoint_path)
