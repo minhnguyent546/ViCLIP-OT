@@ -5774,6 +5774,7 @@ dependencies = [
     { name = "scienceplots" },
     { name = "scikit-learn" },
     { name = "sentence-transformers" },
+    { name = "sentencepiece" },
     { name = "timm" },
     { name = "tokenizer" },
     { name = "torch" },
@@ -5796,7 +5797,6 @@ dev = [
     { name = "peft" },
     { name = "qwen-vl-utils" },
     { name = "ruff" },
-    { name = "sentencepiece" },
     { name = "tabulate" },
 ]
 flash-attn = [
@@ -5828,6 +5828,7 @@ requires-dist = [
     { name = "scienceplots", specifier = ">=2.1.1" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "sentence-transformers", specifier = ">=5.1.0,<5.2.0" },
+    { name = "sentencepiece", specifier = ">=0.2.1" },
     { name = "timm", specifier = ">=1.0.24" },
     { name = "tokenizer", specifier = ">=3.6.2" },
     { name = "torch", specifier = "==2.9.1" },
@@ -5850,7 +5851,6 @@ dev = [
     { name = "peft", specifier = ">=0.18.1" },
     { name = "qwen-vl-utils", specifier = ">=0.0.14" },
     { name = "ruff", specifier = ">=0.12.10" },
-    { name = "sentencepiece", specifier = ">=0.2.1" },
     { name = "tabulate", specifier = ">=0.9.0" },
 ]
 flash-attn = [{ name = "flash-attn", url = "https://huggingface.co/datasets/minhnguyent546/flash-attn-v2.8.3-glibc-2.31/resolve/68b35e77a6899b3670d5d7c29b6f42b6b6edbd95/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" }]
