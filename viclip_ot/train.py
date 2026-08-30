@@ -349,18 +349,21 @@ def train_model(args: argparse.Namespace) -> None:
     train_collate_fun = ImageTextCollate(
         tokenizer=tokenizer,
         max_length=model_bundle.max_length,
+        padding=model_bundle.text_padding,
         caption_to_use=args.train_caption_to_use,
         pair_ids_by_sample_index=train_dataset.pair_ids_by_sample_index,
     )
     eval_collate_fun = ImageTextCollate(
         tokenizer=tokenizer,
         max_length=model_bundle.max_length,
+        padding=model_bundle.text_padding,
         caption_to_use="all",
         pair_ids_by_sample_index=val_dataset.pair_ids_by_sample_index,
     )
     test_collate_fun = ImageTextCollate(
         tokenizer=tokenizer,
         max_length=model_bundle.max_length,
+        padding=model_bundle.text_padding,
         caption_to_use="all",
         pair_ids_by_sample_index=test_dataset.pair_ids_by_sample_index,
     )

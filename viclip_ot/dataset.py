@@ -192,11 +192,13 @@ class ImageTextCollate:
         self,
         tokenizer,
         max_length: int = 2048,
+        padding: Literal["longest", "max_length"] = "longest",
         caption_to_use: Literal["first", "random", "all"] = "all",
         pair_ids_by_sample_index: list[list[int]] | None = None,
     ):
         self.tokenizer = tokenizer
         self.max_length = max_length
+        self.padding = padding
         self.caption_to_use = caption_to_use
         self.pair_ids_by_sample_index = pair_ids_by_sample_index
 
@@ -249,7 +251,7 @@ class ImageTextCollate:
 
         text_inputs = self.tokenizer(
             list(captions),
-            padding=True,  # Dynamic padding (pad to longest in batch)
+            padding=self.padding,
             truncation=True,
             max_length=self.max_length,
             return_tensors="pt",

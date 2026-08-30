@@ -15,6 +15,7 @@ class TrainingModelBundle:
     config: ViCLIPOTConfig | JinaCLIPV2Config
     tokenizer: Any
     max_length: int
+    text_padding: Literal["longest", "max_length"]
     caption_format: CaptionFormat
     image_mean: tuple[float, float, float]
     image_std: tuple[float, float, float]
@@ -54,6 +55,7 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             config=config,
             tokenizer=model.text_encoder.tokenizer,
             max_length=config.max_length,
+            text_padding="longest",
             caption_format=_get_viclip_caption_format(config.text_config.model_name),
             image_mean=C.IMAGENET_DEFAULT_MEAN,
             image_std=C.IMAGENET_DEFAULT_STD,
@@ -79,6 +81,7 @@ def create_training_model(model_config_path: str) -> TrainingModelBundle:
             config=config,
             tokenizer=model.tokenizer,
             max_length=config.max_length,
+            text_padding="longest",
             caption_format="plain",
             image_mean=C.OPENAI_CLIP_MEAN,
             image_std=C.OPENAI_CLIP_STD,
