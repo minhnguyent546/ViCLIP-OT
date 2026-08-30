@@ -1,0 +1,10 @@
+model_type: msiglip
+model_name: google/siglip-base-patch16-256-multilingual
+revision: 8952a4eafcde3cb7ab46b1dd629b33f8784ca9c6
+max_length: 64
+# Interpolate the released 16x16 positional grid to 14x14 during each vision forward.
+image_size: 224
+gradient_checkpointing: true
+attention_implementation: sdpa
+logit_scale_min: 0.01
+logit_scale_max: 200.0
