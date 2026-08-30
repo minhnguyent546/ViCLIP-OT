@@ -61,7 +61,9 @@ class SigLIP(nn.Module):
             )
 
         if config.gradient_checkpointing:
-            self.siglip_model.gradient_checkpointing_enable()
+            self.siglip_model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
 
         total_parameters = sum(parameter.numel() for parameter in self.parameters())
         trainable_parameters = sum(
