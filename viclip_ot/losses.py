@@ -248,6 +248,90 @@ class SigLipLoss(nn.Module):
         return loss_dict["loss"]
 
 
+class DirectGraphKLLoss(nn.Module):
+    """Minimize KL(P_G || Q) between graph targets and student retrieval distributions.
+
+    References:
+    - CUSA: https://arxiv.org/abs/2403.05261
+    - X-CLR: https://arxiv.org/abs/2407.18134
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def get_logits(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+    ):
+        # shape: (batch_size, batch_size)
+        original_dtype = image_features.dtype
+        logits = logit_scale * image_features.float() @ text_features.float().T
+        if logit_bias is not None:
+            logits += logit_bias
+
+        return logits.to(original_dtype)
+
+    def forward(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+        output_dict: bool = False,
+        sim_matrix: Tensor | None = None,
+        image_ids: Tensor | None = None,
+        reduction: str = "mean",
+        **kwargs,
+    ):
+        if sim_matrix is None:
+            raise ValueError("sim_matrix must be provided for direct graph KL loss.")
+        if image_features.shape[0] != text_features.shape[0]:
+            raise ValueError("Direct graph KL loss requires the same number of images and texts.")
+
+        batch_size = image_features.shape[0]
+        if sim_matrix.shape != (batch_size, batch_size):
+            raise ValueError(
+                "sim_matrix must have shape "
+                f"({batch_size}, {batch_size}), but received {tuple(sim_matrix.shape)}."
+            )
+
+        if reduction == "mean":
+            kl_reduction = "batchmean"
+        elif reduction in ("sum", "none"):
+            kl_reduction = reduction
+        else:
+            raise ValueError(
+                f"Unsupported reduction: {reduction}. Expected one of ['mean', 'sum', 'none']."
+            )
+
+        student_logits = self.get_logits(
+            image_features=image_features, text_features=text_features, logit_scale=logit_scale
+        )
+        graph_prior = (logit_scale * sim_matrix.float()).softmax(dim=1)
+
+        loss_i2t = Fun.kl_div(
+            input=student_logits.log_softmax(dim=1),
+            target=graph_prior,
+            reduction=kl_reduction,
+        )
+        loss_t2i = Fun.kl_div(
+            input=student_logits.T.log_softmax(dim=1),
+            target=graph_prior,
+            reduction=kl_reduction,
+        )
+
+        loss_dict = {
+            "loss_i2t": loss_i2t * 0.5,
+            "loss_t2i": loss_t2i * 0.5,
+        }
+        if output_dict:
+            return loss_dict
+        return loss_dict["loss_i2t"] + loss_dict["loss_t2i"]
+
+
 class BatchLevelEntropicOTLoss(nn.Module):
     """
     Batch-level Entropic Optimal Transport Loss
@@ -624,6 +708,116 @@ class HybridSigLipTPLoss(nn.Module):
                 for name, value in sig_lip_loss_dict.items()
             },
             **{f"ot_{name}": value for name, value in ot_loss_dict.items()},
+        }
+        if output_dict:
+            return loss_dict
+        return sum(loss_dict.values())
+
+
+class HybridClipDirectGraphKLLoss(nn.Module):
+    """Combine CLIP loss with direct pair-indexed graph KL supervision."""
+
+    def __init__(self, clip_loss_lambda: float = 0.1) -> None:
+        super().__init__()
+
+        self.clip_loss_lambda = clip_loss_lambda
+
+        self.clip_loss = ClipLoss()
+        self.direct_graph_kl_loss = DirectGraphKLLoss()
+
+    def forward(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+        image_ids: Tensor | None = None,
+        sim_matrix: Tensor | None = None,
+        output_dict: bool = False,
+        reduction: str = "mean",
+    ):
+        clip_loss_dict = self.clip_loss(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            logit_bias=logit_bias,
+            image_ids=image_ids,
+            output_dict=True,
+            reduction=reduction,
+        )
+        direct_graph_kl_loss_dict = self.direct_graph_kl_loss(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            sim_matrix=sim_matrix,
+            output_dict=True,
+            reduction=reduction,
+        )
+
+        loss_dict = {
+            **{
+                f"clip_{name}": self.clip_loss_lambda * value
+                for name, value in clip_loss_dict.items()
+            },
+            **{
+                f"direct_graph_kl_{name}": value
+                for name, value in direct_graph_kl_loss_dict.items()
+            },
+        }
+        if output_dict:
+            return loss_dict
+        return sum(loss_dict.values())
+
+
+class HybridSigLipDirectGraphKLLoss(nn.Module):
+    """Combine SigLIP loss with direct pair-indexed graph KL supervision."""
+
+    def __init__(self, sig_lip_loss_lambda: float = 0.1) -> None:
+        super().__init__()
+
+        self.sig_lip_loss_lambda = sig_lip_loss_lambda
+
+        self.sig_lip_loss = SigLipLoss()
+        self.direct_graph_kl_loss = DirectGraphKLLoss()
+
+    def forward(
+        self,
+        image_features: Tensor,
+        text_features: Tensor,
+        logit_scale: Tensor,
+        logit_bias: Tensor | None = None,
+        image_ids: Tensor | None = None,
+        sim_matrix: Tensor | None = None,
+        output_dict: bool = False,
+        reduction: str = "mean",
+    ):
+        sig_lip_loss_dict = self.sig_lip_loss(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            logit_bias=logit_bias,
+            image_ids=image_ids,
+            output_dict=True,
+            reduction=reduction,
+        )
+        direct_graph_kl_loss_dict = self.direct_graph_kl_loss(
+            image_features=image_features,
+            text_features=text_features,
+            logit_scale=logit_scale,
+            sim_matrix=sim_matrix,
+            output_dict=True,
+            reduction=reduction,
+        )
+
+        loss_dict = {
+            **{
+                f"sig_lip_{name}": self.sig_lip_loss_lambda * value
+                for name, value in sig_lip_loss_dict.items()
+            },
+            **{
+                f"direct_graph_kl_{name}": value
+                for name, value in direct_graph_kl_loss_dict.items()
+            },
         }
         if output_dict:
             return loss_dict

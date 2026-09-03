@@ -102,8 +102,11 @@ def train_model(args: argparse.Namespace) -> None:
     sim_combine_method = args.sim_combine_method
     if args.sim_graph_regularized_ot and args.criterion in (
         "batch_level_entropic_ot_loss",
+        "direct_graph_kl_loss",
         "hybrid_clip_tp_loss",
         "hybrid_sig_lip_tp_loss",
+        "hybrid_clip_direct_graph_kl_loss",
+        "hybrid_sig_lip_direct_graph_kl_loss",
     ):
         if (
             args.precomputed_caption_embeddings_path is None
@@ -214,6 +217,8 @@ def train_model(args: argparse.Namespace) -> None:
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
             sim_matrix_temperature=args.sim_matrix_temperature,
         )
+    elif args.criterion == "direct_graph_kl_loss":
+        criterion = losses.DirectGraphKLLoss()
     elif args.criterion == "hybrid_clip_tp_loss":
         criterion = losses.HybridClipTPLoss(
             clip_loss_lambda=args.hybrid_clip_tp_loss_clip_loss_lambda,
@@ -227,6 +232,14 @@ def train_model(args: argparse.Namespace) -> None:
             sinkhorn_solver=args.sinkhorn_solver,
             use_transport_plan_as_logits=args.use_transport_plan_as_logits,
             sim_matrix_temperature=args.sim_matrix_temperature,
+        )
+    elif args.criterion == "hybrid_clip_direct_graph_kl_loss":
+        criterion = losses.HybridClipDirectGraphKLLoss(
+            clip_loss_lambda=args.hybrid_clip_direct_graph_kl_loss_clip_loss_lambda,
+        )
+    elif args.criterion == "hybrid_sig_lip_direct_graph_kl_loss":
+        criterion = losses.HybridSigLipDirectGraphKLLoss(
+            sig_lip_loss_lambda=args.hybrid_sig_lip_direct_graph_kl_loss_sig_lip_loss_lambda,
         )
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")
@@ -492,8 +505,19 @@ def train_model(args: argparse.Namespace) -> None:
             torch.cuda.synchronize(device)
         test_start_time = time.perf_counter()
         test_criterion = (
-            eval_criterion if model_bundle.test_only_uses_eval_criterion else criterion
+            eval_criterion
+            if model_bundle.test_only_uses_eval_criterion
+            or isinstance(
+                criterion,
+                (
+                    losses.DirectGraphKLLoss,
+                    losses.HybridClipDirectGraphKLLoss,
+                    losses.HybridSigLipDirectGraphKLLoss,
+                ),
+            )
+            else criterion
         )
+        logger.info(f"Test loss criterion: {type(test_criterion).__name__}")
         test_results = eval_model(
             model=model,
             criterion=test_criterion,
@@ -753,8 +777,11 @@ def train_model(args: argparse.Namespace) -> None:
                         criterion,
                         (
                             losses.BatchLevelEntropicOTLoss,
+                            losses.DirectGraphKLLoss,
                             losses.HybridClipTPLoss,
                             losses.HybridSigLipTPLoss,
+                            losses.HybridClipDirectGraphKLLoss,
+                            losses.HybridSigLipDirectGraphKLLoss,
                         ),
                     )
                     and caption_embeddings is not None
@@ -842,8 +869,11 @@ def train_model(args: argparse.Namespace) -> None:
                         criterion,
                         (
                             losses.BatchLevelEntropicOTLoss,
+                            losses.DirectGraphKLLoss,
                             losses.HybridClipTPLoss,
                             losses.HybridSigLipTPLoss,
+                            losses.HybridClipDirectGraphKLLoss,
+                            losses.HybridSigLipDirectGraphKLLoss,
                         ),
                     )
                     and caption_embeddings is not None

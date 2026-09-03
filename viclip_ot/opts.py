@@ -137,8 +137,11 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
             "clip_loss",
             "sig_lip_loss",
             "batch_level_entropic_ot_loss",
+            "direct_graph_kl_loss",
             "hybrid_clip_tp_loss",
             "hybrid_sig_lip_tp_loss",
+            "hybrid_clip_direct_graph_kl_loss",
+            "hybrid_sig_lip_direct_graph_kl_loss",
         ],
         default="clip_loss",
     )
@@ -233,6 +236,18 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         "--hybrid_sig_lip_tp_loss_sig_lip_loss_lambda",
         type=float,
         help="Lambda weight for SigLIP loss in hybrid SigLIP and TP loss (loss = lambda * SigLIP_loss + OT_loss)",
+        default=0.1,
+    )
+    group.add_argument(
+        "--hybrid_clip_direct_graph_kl_loss_clip_loss_lambda",
+        type=float,
+        help="Lambda weight for CLIP loss in hybrid CLIP and direct graph KL loss (loss = lambda * CLIP_loss + direct_graph_kl_loss)",
+        default=0.1,
+    )
+    group.add_argument(
+        "--hybrid_sig_lip_direct_graph_kl_loss_sig_lip_loss_lambda",
+        type=float,
+        help="Lambda weight for SigLIP loss in hybrid SigLIP and direct graph KL loss (loss = lambda * SigLIP_loss + direct_graph_kl_loss)",
         default=0.1,
     )
 
