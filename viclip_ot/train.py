@@ -218,7 +218,9 @@ def train_model(args: argparse.Namespace) -> None:
             sim_matrix_temperature=args.sim_matrix_temperature,
         )
     elif args.criterion == "direct_graph_kl_loss":
-        criterion = losses.DirectGraphKLLoss()
+        criterion = losses.DirectGraphKLLoss(
+            direction=args.direct_graph_kl_loss_direction,
+        )
     elif args.criterion == "hybrid_clip_tp_loss":
         criterion = losses.HybridClipTPLoss(
             clip_loss_lambda=args.hybrid_clip_tp_loss_clip_loss_lambda,
@@ -236,10 +238,12 @@ def train_model(args: argparse.Namespace) -> None:
     elif args.criterion == "hybrid_clip_direct_graph_kl_loss":
         criterion = losses.HybridClipDirectGraphKLLoss(
             clip_loss_lambda=args.hybrid_clip_direct_graph_kl_loss_clip_loss_lambda,
+            direct_graph_kl_loss_direction=args.direct_graph_kl_loss_direction,
         )
     elif args.criterion == "hybrid_sig_lip_direct_graph_kl_loss":
         criterion = losses.HybridSigLipDirectGraphKLLoss(
             sig_lip_loss_lambda=args.hybrid_sig_lip_direct_graph_kl_loss_sig_lip_loss_lambda,
+            direct_graph_kl_loss_direction=args.direct_graph_kl_loss_direction,
         )
     else:
         raise ValueError(f"Unsupported criterion: {args.criterion}")

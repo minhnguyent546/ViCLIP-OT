@@ -227,6 +227,13 @@ def _add_training_opts(parser: argparse.ArgumentParser) -> None:
         default=0.5,
     )
     group.add_argument(
+        "--direct_graph_kl_loss_direction",
+        type=str,
+        choices=["student_to_graph", "graph_to_student"],
+        help="KL direction for direct graph supervision: student_to_graph computes KL(Q_student || P_G), while graph_to_student computes KL(P_G || Q_student)",
+        default="graph_to_student",
+    )
+    group.add_argument(
         "--hybrid_clip_tp_loss_clip_loss_lambda",
         type=float,
         help="Lambda weight for CLIP loss in hybrid CLIP and TP loss (loss = lambda * CLIP_loss + OT_loss)",

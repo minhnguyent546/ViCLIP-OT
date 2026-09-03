@@ -249,30 +249,43 @@ class SigLipLoss(nn.Module):
 
 
 class DirectGraphKLLoss(nn.Module):
-    """Minimize KL(P_G || Q) between graph targets and student retrieval distributions.
+    """Match graph targets and student retrieval distributions with configurable KL direction.
+
+    Let ``student_logits = logit_scale * (U @ V.T)``,
+    ``Q_i2t = softmax(student_logits, dim=1)``,
+    ``Q_t2i = softmax(student_logits.T, dim=1)``, and
+    ``P_G = softmax(logit_scale * sim_matrix, dim=1)``. The loss is:
+
+    - ``student_to_graph``: ``0.5 * [KL(Q_i2t || P_G) + KL(Q_t2i || P_G)]``
+    - ``graph_to_student``: ``0.5 * [KL(P_G || Q_i2t) + KL(P_G || Q_t2i)]``
+
+    The same pair-indexed ``P_G`` is used for image-to-text and text-to-image.
 
     References:
     - CUSA: https://arxiv.org/abs/2403.05261
     - X-CLR: https://arxiv.org/abs/2407.18134
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        direction: Literal["student_to_graph", "graph_to_student"] = "graph_to_student",
+    ) -> None:
         super().__init__()
+        if direction not in ("student_to_graph", "graph_to_student"):
+            raise ValueError(
+                f"Unsupported direct graph KL direction: {direction}. Expected one of "
+                "['student_to_graph', 'graph_to_student']."
+            )
+        self.direction = direction
 
     def get_logits(
         self,
         image_features: Tensor,
         text_features: Tensor,
         logit_scale: Tensor,
-        logit_bias: Tensor | None = None,
-    ):
-        # shape: (batch_size, batch_size)
-        original_dtype = image_features.dtype
-        logits = logit_scale * image_features.float() @ text_features.float().T
-        if logit_bias is not None:
-            logits += logit_bias
-
-        return logits.to(original_dtype)
+    ) -> Tensor:
+        # Keep logits in float32 so softmax normalization is not rounded to fp16/bf16.
+        return logit_scale.float() * (image_features.float() @ text_features.float().T)
 
     def forward(
         self,
@@ -310,18 +323,45 @@ class DirectGraphKLLoss(nn.Module):
         student_logits = self.get_logits(
             image_features=image_features, text_features=text_features, logit_scale=logit_scale
         )
-        graph_prior = (logit_scale * sim_matrix.float()).softmax(dim=1)
+        student_log_probs_i2t = student_logits.log_softmax(dim=1)
+        student_log_probs_t2i = student_logits.T.log_softmax(dim=1)
+        graph_log_probs = (logit_scale.float() * sim_matrix.float()).log_softmax(dim=1)
 
-        loss_i2t = Fun.kl_div(
-            input=student_logits.log_softmax(dim=1),
-            target=graph_prior,
-            reduction=kl_reduction,
-        )
-        loss_t2i = Fun.kl_div(
-            input=student_logits.T.log_softmax(dim=1),
-            target=graph_prior,
-            reduction=kl_reduction,
-        )
+        if self.direction == "student_to_graph":
+            # With log_target=True, F.kl_div(input=log P_G, target=log Q)
+            # computes KL(Q || P_G) a.k.a reverse KL divergence
+            loss_i2t = Fun.kl_div(
+                input=graph_log_probs,
+                target=student_log_probs_i2t,
+                reduction=kl_reduction,
+                log_target=True,
+            )
+            loss_t2i = Fun.kl_div(
+                input=graph_log_probs,
+                target=student_log_probs_t2i,
+                reduction=kl_reduction,
+                log_target=True,
+            )
+        elif self.direction == "graph_to_student":
+            # With log_target=True, F.kl_div(input=log Q, target=log P_G)
+            # computes KL(P_G || Q)
+            loss_i2t = Fun.kl_div(
+                input=student_log_probs_i2t,
+                target=graph_log_probs,
+                reduction=kl_reduction,
+                log_target=True,
+            )
+            loss_t2i = Fun.kl_div(
+                input=student_log_probs_t2i,
+                target=graph_log_probs,
+                reduction=kl_reduction,
+                log_target=True,
+            )
+        else:
+            raise ValueError(
+                f"Unsupported direct graph KL direction: {self.direction}. Expected one of "
+                "['student_to_graph', 'graph_to_student']."
+            )
 
         loss_dict = {
             "loss_i2t": loss_i2t * 0.5,
@@ -717,13 +757,19 @@ class HybridSigLipTPLoss(nn.Module):
 class HybridClipDirectGraphKLLoss(nn.Module):
     """Combine CLIP loss with direct pair-indexed graph KL supervision."""
 
-    def __init__(self, clip_loss_lambda: float = 0.1) -> None:
+    def __init__(
+        self,
+        clip_loss_lambda: float = 0.1,
+        direct_graph_kl_loss_direction: Literal[
+            "student_to_graph", "graph_to_student"
+        ] = "graph_to_student",
+    ) -> None:
         super().__init__()
 
         self.clip_loss_lambda = clip_loss_lambda
 
         self.clip_loss = ClipLoss()
-        self.direct_graph_kl_loss = DirectGraphKLLoss()
+        self.direct_graph_kl_loss = DirectGraphKLLoss(direction=direct_graph_kl_loss_direction)
 
     def forward(
         self,
@@ -772,13 +818,19 @@ class HybridClipDirectGraphKLLoss(nn.Module):
 class HybridSigLipDirectGraphKLLoss(nn.Module):
     """Combine SigLIP loss with direct pair-indexed graph KL supervision."""
 
-    def __init__(self, sig_lip_loss_lambda: float = 0.1) -> None:
+    def __init__(
+        self,
+        sig_lip_loss_lambda: float = 0.1,
+        direct_graph_kl_loss_direction: Literal[
+            "student_to_graph", "graph_to_student"
+        ] = "graph_to_student",
+    ) -> None:
         super().__init__()
 
         self.sig_lip_loss_lambda = sig_lip_loss_lambda
 
         self.sig_lip_loss = SigLipLoss()
-        self.direct_graph_kl_loss = DirectGraphKLLoss()
+        self.direct_graph_kl_loss = DirectGraphKLLoss(direction=direct_graph_kl_loss_direction)
 
     def forward(
         self,
