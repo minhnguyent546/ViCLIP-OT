@@ -27,7 +27,7 @@ jobs:
       - name: Install the latest version of uv and set the python version
         uses: astral-sh/setup-uv@v7
         with:
-          version: ">=0.9.22"
+          version: ">=0.13.5"
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - name: Check imports
@@ -44,7 +44,7 @@ jobs:
         - name: Install the latest version of uv and set the python version
           uses: astral-sh/setup-uv@v7
           with:
-            version: ">=0.9.22"
+            version: ">=0.13.5"
             enable-cache: true
 
         - name: Lint with ruff
