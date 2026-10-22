@@ -4,7 +4,7 @@ version = "0.1.5"
 description = "ViCLIP-OT: The First Foundation Vision-Language Model for Vietnamese Image–Text Retrieval with Optimal Transport"
 readme = "README.md"
 license = "GPL-3.0"
-requires-python = ">=3.12"
+requires-python = ">=3.12.15"
 authors = [
   {name = "Minh-Thien Nguyen", email = "minhnguyent546@gmail.com"},
   {name = "Quoc-Khang Tran", email = "twkan2001@gmail.com"},
