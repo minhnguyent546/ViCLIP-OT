@@ -1,9 +1,9 @@
 # ViCLIP-OT: A Structure-Aware Vision-Language Model for Vietnamese Image-Text Retrieval
 
 <p align="center">
-  <a href="https://doi.org/10.1007/s00138-026-01956-0"><img alt="DOI" src="https://img.shields.io/badge/DOI-10.1007%2Fs00138--026--01956--0-007ec6.svg?style=flat"></a>
+  <a href="https://doi.org/10.1007/s00138-026-01956-0"><img alt="Paper DOI" src="https://img.shields.io/badge/Paper-10.1007%2Fs00138--026--01956--0-007ec6.svg?style=flat"></a>
   <a href="https://arxiv.org/abs/2602.22678"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-2602.22678-b31b1b.svg?style=flat"></a>
-  <a href="https://doi.org/10.5281/zenodo.20154087"><img alt="Zenodo DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.20154087.svg"></a>
+  <a href="https://doi.org/10.5281/zenodo.20154087"><img alt="Zenodo DOI" src="https://img.shields.io/badge/Zenodo-10.5281%2Fzenodo.20154087-1682d4.svg?style=flat"></a>
   <a href="https://huggingface.co/collections/minhnguyent546/viclip-ot"><img alt="Model on Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue"></a>
   <br />
   <a href="https://www.python.org"><img alt="Python" src="https://img.shields.io/badge/python-3.12%20%7C%203.13-3776AB.svg?style=flat&logo=python&logoColor=white"></a>
