@@ -1,6 +1,7 @@
 # ViCLIP-OT: A Structure-Aware Vision-Language Model for Vietnamese Image-Text Retrieval
 
 <p align="center">
+  <a href="https://doi.org/10.1007/s00138-026-01956-0"><img alt="DOI" src="https://img.shields.io/badge/DOI-10.1007%2Fs00138--026--01956--0-007ec6.svg?style=flat"></a>
   <a href="https://arxiv.org/abs/2602.22678"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-2602.22678-b31b1b.svg?style=flat"></a>
   <a href="https://doi.org/10.5281/zenodo.20154087"><img alt="Zenodo DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.20154087.svg"></a>
   <a href="https://huggingface.co/collections/minhnguyent546/viclip-ot"><img alt="Model on Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue"></a>
@@ -59,6 +60,8 @@ Table of Contents
 
 ## News
 
+- **[2026/11/25]** Paper published in *Machine Vision and Applications* (Vol. 38, Art. 26) — [DOI](https://doi.org/10.1007/s00138-026-01956-0).
+- **[2026/10/31]** Paper accepted at *Machine Vision and Applications*.
 - **[2026/02/26]** Preprint submitted to arXiv.
 
 
@@ -671,13 +674,17 @@ This project is licensed under the GNU General Public License v3.0 (GPL-3.0). Se
 
 If you find `ViCLIP-OT` useful in your research, please cite the following paper:
 ```bibtex
-@misc{tran2026viclipotfoundationvisionlanguagemodel,
-    title={ViCLIP-OT: The First Foundation Vision-Language Model for Vietnamese Image-Text Retrieval with Optimal Transport},
-    author={Quoc-Khang Tran and Minh-Thien Nguyen and Nguyen-Khang Pham},
-    year={2026},
-    eprint={2602.22678},
-    archivePrefix={arXiv},
-    primaryClass={cs.CV},
-    url={https://arxiv.org/abs/2602.22678},
+@article{tran2026viclipot,
+  title   = {{ViCLIP-OT}: A Structure-Aware Vision-Language Model for {Vietnamese} Image-Text Retrieval},
+  author  = {Tran, Quoc-Khang and Nguyen, Minh-Thien and Pham, Nguyen-Khang},
+  journal = {Machine Vision and Applications},
+  volume  = {38},
+  number  = {1},
+  pages   = {26},
+  year    = {2026},
+  month   = nov,
+  issn    = {1432-1769},
+  doi     = {10.1007/s00138-026-01956-0},
+  url     = {https://doi.org/10.1007/s00138-026-01956-0}
 }
 ```
